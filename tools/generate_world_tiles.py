@@ -11,8 +11,8 @@ from huggingface_hub import InferenceClient
 
 # FLUX.1-dev is the quality-first base generator. Kontext is used only to
 # preserve visual identity when extending an existing segment.
-BASE_MODEL = "black-forest-labs/FLUX.1-dev"
-CONTINUATION_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
+BASE_MODEL = "black-forest-labs/FLUX.1-schnell"
+CONTINUATION_MODEL = "black-forest-labs/FLUX.1-schnell"
 OUT = pathlib.Path("generated-world")
 WIDTH, HEIGHT = 1024, 576
 TILE_WIDTH = 1280
@@ -132,10 +132,10 @@ def main():
                 model=args.base_model,
                 width=WIDTH,
                 height=HEIGHT,
-                num_inference_steps=28,
+                num_inference_steps=4,
                 seed=73000 + index,
                 negative_prompt=NEGATIVE,
-                guidance_scale=3.5,
+                guidance_scale=0.0,
             )
 
         image = image.convert("RGB")
