@@ -60,7 +60,7 @@ footer{text-align:center;color:#777;font-size:10px;padding:14px}.openbone-panel{
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d'),W=1280,H=720;
 let running=false,last=0,elapsed=0,camera=0,cameraZoom=1,objects=[],characters=[],rain=[],recorder=null,chunks=[],audioUrl=null,dragTarget=null,timelineLength=60;const imageCache=new Map();
 let liveWorld=SudioWorld.create({seed:20261119,mood:'noir'}),worldSeed=20261119;
-function refreshWorldStatus(){const s=liveWorld.stats();const el=$('worldStatus');if(el)el.textContent='موتور زنده '+s.version+' · seed '+s.seed+' · قطعه‌های آماده '+s.cached+' · تولید '+s.generated+' · بازیابی از حافظه '+s.cacheHits;}
+function refreshWorldStatus(){const s=liveWorld.stats();const el=$('worldStatus');if(el){const msg='موتور زنده '+s.version+' · seed '+s.seed+' · قطعه‌های آماده '+s.cached+' · تولید '+s.generated+' · بازیابی از حافظه '+s.cacheHits;if(el.textContent!==msg)el.textContent=msg;}}
 function regenerateWorld(){worldSeed=(Number($('worldSeed').value)>>>0)||20261119;liveWorld=SudioWorld.create({seed:worldSeed,mood:$('worldMood').value});$('worldSeed').value=worldSeed;render();refreshWorldStatus();}
 $('worldRegenerate').onclick=regenerateWorld;$('worldMood').addEventListener('change',()=>{liveWorld.setMood($('worldMood').value);render();refreshWorldStatus()});
 const $=id=>document.getElementById(id);$('cameraZoom').oninput=e=>{cameraZoom=Number(e.target.value)||1;$('zoomValue').textContent=Math.round(cameraZoom*100)+'%';render()};$('cameraOffset').oninput=e=>{camera=Number(e.target.value)||0;$('cameraValue').textContent=Math.round(camera);render()};
