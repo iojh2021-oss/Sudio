@@ -16,7 +16,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
 
   let renderer,scene,camera;
   try {
-    renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
+    renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,powerPreference:'high-performance'});
+    renderer.setClearColor(0x050506,0);
   } catch(error) {
     canvas.remove();
     console.warn('Sudio WebGL unavailable; retaining Canvas renderer.',error);
@@ -27,11 +28,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.15;
   scene=new THREE.Scene();
-  scene.background=new THREE.Color(0x080b10);
-  scene.fog=new THREE.FogExp2(0x111820,0.0024);
-  camera=new THREE.PerspectiveCamera(49,16/9,.1,1900);
-  camera.position.set(0,15,42);
-  camera.lookAt(0,9,-65);
+  scene.background=null;
+  scene.fog=new THREE.FogExp2(0x111820,0.00135);
+  camera=new THREE.PerspectiveCamera(56,16/9,.1,2200);
+  camera.position.set(0,23,48);
+  camera.lookAt(0,18,-105);
 
   const hemi=new THREE.HemisphereLight(0x9aa9b8,0x101014,1.1);scene.add(hemi);
   const moon=new THREE.DirectionalLight(0xb8c9d8,2.1);moon.position.set(-45,85,30);scene.add(moon);
@@ -86,6 +87,29 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
         cursor+=depth+4+rnd(n+8)*9;slot++;
       }
     }
+    // Central distant skyline: ensures the vanishing point is framed by visible towers,
+    // not an empty gap between the two near street canyons.
+    for(let i=0;i<5;i++){
+      const n=seed+700+i*43;
+      const width=16+rnd(n)*12,height=48+rnd(n+4)*42,depth=15+rnd(n+8)*12;
+      const x=(rnd(n+2)-.5)*27;
+      const z=-42-i*18-rnd(n+9)*13;
+      const tower=new THREE.Group();tower.position.set(x,0,z);g.add(tower);
+      addBox(tower,mats.dark,0,0,0,width,height,depth);
+      addBox(tower,mats.stone,0,height*.48,depth*.501,width*.92,height*.94,.24);
+      addBox(tower,mats.line,0,height,0,width+1,1.1,depth+1);
+      const cols=Math.max(3,Math.floor(width/3.2)),rows=Math.max(5,Math.floor(height/4.8));
+      for(let row=0;row<rows;row++)for(let col=0;col<cols;col++){
+        const lit=rnd(n+row*23+col*17)>.32;
+        const wx=-width*.39+col*(width*.78/Math.max(1,cols-1));
+        const wy=2.8+row*(height-6)/rows;
+        addBox(tower,lit?mats.warm:mats.glass,wx,wy,depth*.505,.95,1.8,.14);
+      }
+      for(let p=0;p<=cols;p++){
+        const px=-width*.45+p*(width*.9/cols);
+        addBox(tower,mats.stone,px,0,depth*.52,.3,height,.22);
+      }
+    }
     // Wet asphalt lane markings and sidewalks.
     addBox(g,mats.dark,0,.05,-chunkLength/2,15,.16,chunkLength);
     for(let z=0;z<chunkLength;z+=15)addBox(g,mats.line,0,.045,-z, .16,.025,5.5);
@@ -134,7 +158,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     camera.position.x=Math.sin(t*.00013)*.65;
     camera.position.y=14.5+Math.sin(t*.00031)*.28;
     camera.position.z=42;
-    camera.lookAt(camera.position.x*.25,10,-68);
+    camera.lookAt(camera.position.x*.2,18,-105);
     redLight.position.x=Math.sin(t*.0004)*12;
     for(let i=0;i<rainCount;i++){
       const j=i*3;rainPos[j+1]-=dt*(17+(i%11)*1.7);rainPos[j]-=dt*2.3;
@@ -143,7 +167,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     rainGeo.attributes.position.needsUpdate=true;
     fogs.forEach((f,i)=>{f.position.x=Math.sin(t*.00007+i*2)*13;f.position.z=-35-i*24+Math.sin(t*.00005+i)*3;});
     renderer.render(scene,camera);
-    if(frame===2){legacy.style.visibility='hidden';canvas.style.zIndex='1';}
+    if(frame===2){canvas.style.zIndex='1';}
+    // Keep the proven Canvas scene underneath as a fallback; only hide it after
+    // the WebGL pass has submitted actual geometry and the skyline is populated.
+    if(frame===12 && chunks.size>0 && renderer.info.render.calls>35){legacy.style.visibility='hidden';}
     const status=document.getElementById('worldStatus');
     if(status&&frame%60===0)status.textContent='WebGL2 زنده · GPU محلی · قطعه‌های سه‌بعدی: '+chunks.size+' · بدون سرور و API';
   }
