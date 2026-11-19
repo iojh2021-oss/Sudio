@@ -80,6 +80,10 @@ jobs:
           assert.equal(collisionWorld.getCollisionAt(obstacle.worldX, 0), null, 'interacting with an obstacle must clear its collision');
           const repeat = collisionWorld.interactAt(obstacle.worldX, 0);
           assert.equal(repeat.ok, false, 'an already-interacted prop must not be offered again');
+          const journal = collisionWorld.getJournal();
+          assert.equal(journal.length, 1, 'successful interaction must create one journal entry');
+          assert.equal(journal[0].id, obstacle.id, 'journal entry must identify the discovered prop');
+          assert.equal(collisionWorld.snapshot().journal.length, 1, 'world snapshot must preserve discovery history');
           const page = require('node:fs').readFileSync('index.html', 'utf8');
           assert.ok(page.includes('id="interactWorld"'), 'touch interaction control must exist');
           assert.ok(page.includes('function interactWithWorld()'), 'keyboard and touch must share interaction logic');
