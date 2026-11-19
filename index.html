@@ -59,13 +59,14 @@ footer{text-align:center;color:#777;font-size:10px;padding:14px}.openbone-panel{
 <script>
 (()=>{
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d'),W=1280,H=720;
+const $=id=>document.getElementById(id);
 let running=false,last=0,elapsed=0,camera=0,cameraZoom=1,objects=[],characters=[],rain=[],recorder=null,chunks=[],audioUrl=null,dragTarget=null,timelineLength=60;const imageCache=new Map();
 let liveWorld=SudioWorld.create({seed:20261119,mood:'noir'}),worldSeed=20261119;
 function refreshWorldJournal(){const host=$('worldJournal');if(!host)return;const entries=liveWorld.getJournal();host.textContent=entries.length?'دفتر کشف · '+entries.length+' مورد ثبت‌شده: '+entries.slice(0,3).map(x=>x.message).join(' | '):'هنوز کشفی ثبت نشده است.'}
 function refreshWorldStatus(){const s=liveWorld.stats();const el=$('worldStatus');if(el){const nearby=liveWorld.getNearbyProps(camera+hero.x,125);const near=nearby.length?' · نزدیک‌ترین شیء: '+({phonebooth:'کیوسک تلفن',newspaper:'روزنامه',lamp:'چراغ',bench:'نیمکت',hydrant:'شیر آتش‌نشانی',bin:'سطل',poster:'پوستر',bollard:'مانع'}[nearby[0].type]||'شیء خیابانی'):' · مسیر باز';const plan=SudioWorld.director(worldSeed,Math.floor((camera+hero.x)/SudioWorld.chunkWidth),{mood:'noir'});const ai=plan.planner==='neural'?' · هدایت‌گر عصبی آفلاین':' · حالت پشتیبان';const msg='موتور زنده '+s.version+' · seed '+s.seed+' · قطعه‌های آماده '+s.cached+' · تولید '+s.generated+ai+near;if(el.textContent!==msg)el.textContent=msg;}refreshWorldJournal();}
 function regenerateWorld(){worldSeed=(Number($('worldSeed').value)>>>0)||20261119;liveWorld=SudioWorld.create({seed:worldSeed,mood:$('worldMood').value});$('worldSeed').value=worldSeed;render();refreshWorldStatus();}
 $('worldRegenerate').onclick=regenerateWorld;$('worldMood').addEventListener('change',()=>{liveWorld.setMood($('worldMood').value);render();refreshWorldStatus()});
-const $=id=>document.getElementById(id);$('cameraZoom').oninput=e=>{cameraZoom=Number(e.target.value)||1;$('zoomValue').textContent=Math.round(cameraZoom*100)+'%';render()};$('cameraOffset').oninput=e=>{camera=Number(e.target.value)||0;$('cameraValue').textContent=Math.round(camera);render()};
+$('cameraZoom').oninput=e=>{cameraZoom=Number(e.target.value)||1;$('zoomValue').textContent=Math.round(cameraZoom*100)+'%';render()};$('cameraOffset').oninput=e=>{camera=Number(e.target.value)||0;$('cameraValue').textContent=Math.round(camera);render()};
 const history={undo:[],redo:[],limit:60};
 function modelSnapshot(){return JSON.stringify({hero,characters,objects,camera,cameraZoom,elapsed,timelineLength,world:liveWorld.snapshot()})}
 function updateHistoryButtons(){$('undo').disabled=!history.undo.length;$('redo').disabled=!history.redo.length}
