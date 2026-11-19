@@ -58,7 +58,12 @@ jobs:
           done
           node - <<'JS'
           const assert = require('node:assert/strict');
-          require('./world-model.js');\n          const engine = require('./world-engine.js');\n          const neural = engine.director(20261119, 8, {mood:'noir'});\n          assert.equal(neural.planner, 'neural', 'trained neural world planner must be loaded');\n          assert.ok(neural.confidence > 0 && neural.confidence <= 1, 'neural planner must expose valid confidence');\n          assert.deepEqual(engine.director(20261119, 8, {mood:'noir'}), neural, 'neural planner must be deterministic for the same seed and position');
+          require('./world-model.js');
+          const engine = require('./world-engine.js');
+          const neural = engine.director(20261119, 8, {mood:'noir'});
+          assert.equal(neural.planner, 'neural', 'trained neural world planner must be loaded');
+          assert.ok(neural.confidence > 0 && neural.confidence <= 1, 'neural planner must expose valid confidence');
+          assert.deepEqual(engine.director(20261119, 8, {mood:'noir'}), neural, 'neural planner must be deterministic for the same seed and position');
           const a = engine.makeChunk(77, 3, {mood:'noir'});
           const b = engine.makeChunk(77, 3, {mood:'noir'});
           assert.deepEqual(a, b, 'same seed and index must create identical chunks');
