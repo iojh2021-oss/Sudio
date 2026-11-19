@@ -36,8 +36,8 @@ jobs:
       - name: Generate photorealistic city tiles
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          START: ${{ inputs.start }}
-          COUNT: ${{ inputs.count }}
+          START: ${{ inputs.start || '0' }}
+          COUNT: ${{ inputs.count || '4' }}
         run: python tools/generate_world_tiles.py --start "$START" --count "$COUNT"
       - name: Commit generated tiles
         run: |
