@@ -41,14 +41,29 @@ jobs:
         shell: bash
         run: |
           if [ -z "$HF_TOKEN" ]; then
-            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-              echo "::error::HF_TOKEN is missing. Add the repository Actions secret before manual image generation."
-              exit 1
-            fi
-            echo "::warning::HF_TOKEN is missing; automatic image generation skipped."
-            exit 0
+            echo "::error::HF_TOKEN is missing in this workflow run. No AI images were generated. Check that the secret is named HF_TOKEN in iojh2021-oss/Sudio > Settings > Secrets and variables > Actions, then rerun this workflow."
+            exit 1
           fi
           python tools/generate_world_tiles.py --start "$START" --count "$COUNT"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          manifest = json.loads(Path("generated-world/manifest.json").read_text())
+          tiles = manifest.get("tiles", [])
+          if len(tiles) < 1:
+              raise SystemExit("Image generation returned no tiles.")
+          for tile in tiles:
+              path = Path("generated-world") / tile["file"]
+              if not path.is_file():
+                  raise SystemExit(f"Missing generated image: {path}")
+              with Image.open(path) as image:
+                  if image.format != "WEBP" or image.size != (1024, 576):
+                      raise SystemExit(f"Invalid generated image: {path}")
+              if not tile.get("sha256"):
+                  raise SystemExit(f"Missing SHA-256 for {path}")
+          print(f"Verified {len(tiles)} generated AI image(s).")
+          PY
       - name: Commit generated tiles
         run: |
           git config user.name "github-actions[bot]"
