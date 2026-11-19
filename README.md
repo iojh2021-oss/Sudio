@@ -37,7 +37,7 @@ The Pages workflow checks HTML IDs and JavaScript syntax, then runs deterministi
 
 ## AI image-world generation (online generation + offline playback)
 
-The image-world layer uses Hugging Face Inference Providers with `black-forest-labs/FLUX.1-schnell` (Apache-2.0 model license). It generates detailed photographic noir city tiles outside the render loop. Generated WebP tiles are committed under `generated-world/`, loaded by the studio, and cached in IndexedDB for later offline playback. The compact procedural world remains the fallback when no AI tiles are available.
+The image-world layer uses Hugging Face Inference Providers. `black-forest-labs/FLUX.1-schnell` (Apache-2.0) creates the first cinematic noir image. For reference-guided scene continuation, `black-forest-labs/FLUX.1-Kontext-dev` edits the preceding image to preserve the city's visual identity. Kontext-dev is governed by the FLUX.1-dev Non-Commercial License; review and accept its terms before enabling it, and do not use it for commercial deployment without the required permission. Images are generated outside the render loop. Generated WebP images are committed under `generated-world/`, loaded by the studio, and cached in IndexedDB for later offline playback. The compact procedural world remains the fallback when no AI tiles are available.
 
 ### Enable image generation
 1. Accept the model access conditions on the Hugging Face model page and create a token with **Inference Providers** permission.
@@ -46,4 +46,4 @@ The image-world layer uses Hugging Face Inference Providers with `black-forest-l
 4. The workflow generates images and commits them. The Pages workflow deploys the new tiles automatically.
 5. Open the studio online once; generated tiles are cached locally and can then be replayed offline.
 
-Hosted inference may consume Hugging Face credits or incur provider charges. The site/APK does not include the 12B model weights or API token. This is batch tile generation, not per-frame live diffusion; perfect seamless continuity between independently generated tiles is not guaranteed.
+Hosted inference may consume Hugging Face credits or incur provider charges. The site/APK does not include the model weights or API token. This is batch image generation, not per-frame live diffusion. Reference-guided editing improves style continuity, but adjacent city views still require visual review; exact seamless geographic continuity is not guaranteed.
