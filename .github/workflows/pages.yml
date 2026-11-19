@@ -70,6 +70,9 @@ jobs:
           const nearby = world.getNearbyProps(480, 960);
           assert.ok(nearby.length > 0, 'nearby interaction query must return generated props');
           assert.ok(nearby.every(p => Number.isFinite(p.worldX) && Number.isFinite(p.distance)), 'nearby props must expose world coordinates and distance');
+          const interaction = world.interactAt(480, 960);
+          assert.equal(interaction.ok, true, 'nearby generated props must be interactable');
+          assert.ok(typeof interaction.message === 'string' && interaction.message.length > 0, 'interaction must return a user-facing response');
           console.log('Live world engine tests passed');
           JS
       - name: Configure Pages
