@@ -52,6 +52,8 @@ jobs:
           print(f"Validated {len(ids)} unique ids and {len(scripts)} inline scripts")
           PY
           node --check world-engine.js
+          node --check world-image-engine.js
+          python3 -m py_compile tools/generate_world_tiles.py
           for script in /tmp/sudio-inline-*; do
             [ -f "$script" ] || continue
             node --check "$script"
