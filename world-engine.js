@@ -14,16 +14,22 @@
     {id:'downtown',label:'مرکز شهر',height:[280,490],density:1,accent:.22},
     {id:'quiet',label:'خیابان خلوت',height:[100,230],density:.38,accent:.12}
   ];
+  function neuralDistrict(seed,index){
+    const model=root.SudioWorldModel;if(!model||model.version!=='tiny-mlp-1')return null;
+    const z=(seed>>>0)%1000003,angle=z*.00017;
+    const x=[Math.sin(angle),Math.cos(angle),Math.sin(index*.37),Math.cos(index*.37)];
+    const h=model.w1.map((row,j)=>Math.tanh(row.reduce((s,w,k)=>s+w*x[k],model.b1[j])));
+    const logits=model.w2.map((row,o)=>row.reduce((s,w,j)=>s+w*h[j],model.b2[o]));
+    const max=Math.max(...logits),p=logits.map(v=>Math.exp(v-max)),sum=p.reduce((a,b)=>a+b,0);
+    const probs=p.map(v=>v/sum),r=random(hash32(seed^Math.imul(index+1,0x45d9f3b)))();
+    let n=r,choice=probs.length-1;for(let i=0;i<probs.length;i++){n-=probs[i];if(n<=0){choice=i;break}}
+    return {index:choice,confidence:probs[choice],probabilities:probs};
+  }
   function director(seed,index,context){
-    // Lightweight semantic director. A compact on-device model can later
-    // implement the same interface without changing the renderer.
-    const r=random(hash32(seed^Math.imul(index+1,0x45d9f3b)));
-    const mood=context&&context.mood||'noir';
-    let weights=[.32,.22,.30,.16];
-    if(index>0&&index%5===0)weights=[.15,.15,.55,.15];
-    if(index>0&&index%7===0)weights=[.12,.48,.12,.28];
-    let n=r(),district=0;for(let i=0;i<weights.length;i++){n-=weights[i];if(n<=0){district=i;break}}
-    return {district:DISTRICTS[district].id,mood,weather:(index%4===3?'mist':'clear'),storyBeat:index%6===0?'landmark':(index%3===0?'transition':'street'),density:DISTRICTS[district].density};
+    const mood=context&&context.mood||'noir',prediction=neuralDistrict(seed,index);
+    let district=prediction?prediction.index:0;
+    if(!prediction){const r=random(hash32(seed^Math.imul(index+1,0x45d9f3b)));let n=r(),weights=[.32,.22,.30,.16];for(let i=0;i<weights.length;i++){n-=weights[i];if(n<=0){district=i;break}}}
+    return {district:DISTRICTS[district].id,mood,weather:(index%4===3?'mist':'clear'),storyBeat:index%6===0?'landmark':(index%3===0?'transition':'street'),density:DISTRICTS[district].density,planner:prediction?'neural':'fallback',confidence:prediction?prediction.confidence:null};
   }
   function makeChunk(seed,index,context){
     const plan=director(seed,index,context),district=DISTRICTS.find(d=>d.id===plan.district)||DISTRICTS[0];
@@ -52,7 +58,7 @@
     stats(){return {version:VERSION,seed:this.seed,cached:this.cache.size,generated:this.generated,cacheHits:this.hits,chunkWidth:CHUNK_WIDTH}}
   }
   function create(options){return new LiveWorld(options)}
-  const api={version:VERSION,chunkWidth:CHUNK_WIDTH,create,makeChunk,director,hash32};
+  const api={version:VERSION,chunkWidth:CHUNK_WIDTH,create,makeChunk,director,hash32,neuralDistrict};
   root.SudioWorld=api;
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
