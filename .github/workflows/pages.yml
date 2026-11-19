@@ -78,6 +78,11 @@ jobs:
           assert.ok(obstacle && obstacle.solid, 'solid generated props must be detectable as obstacles');
           collisionWorld.interactAt(obstacle.worldX, 0);
           assert.equal(collisionWorld.getCollisionAt(obstacle.worldX, 0), null, 'interacting with an obstacle must clear its collision');
+          const repeat = collisionWorld.interactAt(obstacle.worldX, 0);
+          assert.equal(repeat.ok, false, 'an already-interacted prop must not be offered again');
+          const page = require('node:fs').readFileSync('index.html', 'utf8');
+          assert.ok(page.includes('id="interactWorld"'), 'touch interaction control must exist');
+          assert.ok(page.includes('function interactWithWorld()'), 'keyboard and touch must share interaction logic');
           console.log('Live world engine tests passed');
           JS
       - name: Configure Pages
