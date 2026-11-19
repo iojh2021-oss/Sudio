@@ -61,10 +61,15 @@ jobs:
           const b = engine.makeChunk(77, 3, {mood:'noir'});
           assert.deepEqual(a, b, 'same seed and index must create identical chunks');
           assert.ok(a.buildings.length > 0, 'chunk must contain generated buildings');
+          const landmark = engine.makeChunk(77, 0, {mood:'noir'});
+          assert.ok(landmark.props.some(p => p.landmark && p.type === 'phonebooth'), 'landmark districts must include a persistent landmark');
           const world = engine.create({seed:77});
           const visible = world.getVisibleChunks(0, 1280);
           assert.ok(visible.length >= 2, 'camera window must preload neighboring chunks');
           assert.ok(world.stats().generated > 0, 'generation stats must increment');
+          const nearby = world.getNearbyProps(480, 960);
+          assert.ok(nearby.length > 0, 'nearby interaction query must return generated props');
+          assert.ok(nearby.every(p => Number.isFinite(p.worldX) && Number.isFinite(p.distance)), 'nearby props must expose world coordinates and distance');
           console.log('Live world engine tests passed');
           JS
       - name: Configure Pages
