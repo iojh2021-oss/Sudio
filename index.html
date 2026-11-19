@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SUDIO — Noir Animation Studio</title>
+<style>
+:root{--bg:#0b0b0d;--panel:#151519;--line:#34343b;--ink:#f4f4f4;--muted:#a4a4ad;--red:#d71920;--gold:#e0c47a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Tahoma,Arial,sans-serif}
+header{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--line);background:#101014}
+.brand{font-weight:900;letter-spacing:3px;font-size:19px}.brand span{color:var(--red)}.top-actions{display:flex;gap:8px;align-items:center}
+button,.filebtn,select,input,textarea{font:inherit}button,.filebtn{border:1px solid #444;background:#202026;color:#fff;border-radius:7px;padding:9px 12px;cursor:pointer}button:hover,.filebtn:hover{border-color:var(--red)}button.primary{background:var(--red);border-color:var(--red)}button:disabled{opacity:.4;cursor:not-allowed}
+.layout{display:grid;grid-template-columns:290px minmax(0,1fr) 280px;gap:12px;padding:12px;max-width:1600px;margin:auto}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0}.panel h3{font-size:13px;margin:0;padding:13px 14px;border-bottom:1px solid var(--line);letter-spacing:.3px}
+.panel-body{padding:12px;display:grid;gap:10px}.group{border-bottom:1px solid #303038;padding-bottom:10px}.group:last-child{border:0}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}input[type=text],input[type=number],select,textarea{width:100%;background:#0d0d10;color:#fff;border:1px solid #41414a;border-radius:6px;padding:8px;min-width:0}input[type=color]{width:100%;height:34px;background:#111;border:1px solid #444;border-radius:6px}
+.row{display:flex;gap:7px}.row>*{flex:1;min-width:0}.small{font-size:11px;color:var(--muted);line-height:1.6}.object-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.object-grid button{padding:8px 3px;font-size:11px}.asset{display:flex;align-items:center;justify-content:space-between;padding:7px 8px;background:#202027;border-radius:6px;font-size:12px}.asset button{padding:4px 7px}
+.stage-wrap{display:grid;gap:9px;min-width:0}.stage{background:#050506;border:1px solid #38383e;border-radius:10px;overflow:hidden;position:relative}.stage canvas{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain}.stage-tag{position:absolute;top:10px;left:10px;background:#111c;color:#ddd;padding:5px 8px;border-radius:5px;font-size:10px;letter-spacing:1px}
+.transport{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:#151519;border:1px solid var(--line);border-radius:9px;padding:9px}.transport .time{margin-right:auto;color:var(--gold);font-variant-numeric:tabular-nums}
+.timeline{height:88px;background:#151519;border:1px solid var(--line);border-radius:9px;padding:10px;overflow:hidden}.track{height:17px;background:#25252c;border-radius:4px;margin:6px 0;position:relative}.track span{position:absolute;inset:0 auto 0 0;width:38%;background:#8d171d;border-radius:4px}.track:nth-child(3) span{background:#5c5c68;width:22%}
+.tabs{display:flex;gap:5px;flex-wrap:wrap}.hint{padding:9px;background:#211719;border:1px solid #542126;border-radius:7px;color:#e9c7c8;font-size:11px;line-height:1.7}
+footer{text-align:center;color:#777;font-size:10px;padding:14px}
+@media(max-width:1050px){.layout{grid-template-columns:1fr 260px}.stage-wrap{grid-column:1}.left{grid-column:2;grid-row:1/3}.right{grid-column:1}.layout{direction:ltr}.panel,.stage-wrap{direction:rtl}}
+@media(max-width:700px){.layout{display:flex;flex-direction:column}.stage-wrap{order:-1}header{padding:0 10px}.brand{font-size:15px}.top-actions button{padding:7px;font-size:11px}}
+</style>
+</head>
+<body>
+<header><div class="brand">SU<span>D</span>IO <small style="font-size:10px;color:#888;letter-spacing:1px">NOIR STUDIO</small></div><div class="top-actions"><button id="newScene">صحنه تازه</button><button class="primary" id="renderTop">رندر / ضبط</button></div></header>
+<main class="layout">
+<aside class="panel left"><h3>کتابخانه و صحنه</h3><div class="panel-body">
+<div class="group"><label>افزودن آبجکت به جهان</label><div class="object-grid">
+<button data-object="building">🏢 ساختمان</button><button data-object="lamp">💡 چراغ</button><button data-object="car">🚘 ماشین</button><button data-object="tree">🌳 درخت</button><button data-object="barrel">🛢 بشکه</button><button data-object="sign">🪧 تابلو</button><button data-object="bench">🪑 نیمکت</button><button data-object="moon">🌙 ماه</button><button data-object="rain">🌧 باران</button>
+</div></div>
+<div class="group"><label>کاراکترها</label><button class="primary" id="addCharacter" style="width:100%">＋ افزودن کاراکتر</button><div id="characterList" style="display:grid;gap:6px;margin-top:8px"></div></div>
+<div class="group"><label>آبجکت‌های صحنه</label><div id="objectList" style="display:grid;gap:6px"><div class="small">هنوز آبجکتی اضافه نشده است.</div></div></div>
+<div class="hint">جهان به‌صورت الگوریتمی و پیوسته ساخته می‌شود. با حرکت کاراکتر، خیابان و ساختمان‌های تازه وارد کادر می‌شوند؛ برای این بخش به سرویس AI یا سرور نیاز نیست.</div>
+</div></aside>
+<section class="stage-wrap">
+<div class="stage"><canvas id="scene" width="1280" height="720"></canvas><div class="stage-tag">LIVE SCENE · MONOCHROME / RED ACCENT</div></div>
+<div class="transport"><button class="primary" id="play">▶ حرکت</button><button id="pause">Ⅱ توقف</button><button id="step">یک گام</button><button id="reset">↺ ابتدا</button><span class="time" id="clock">00:00</span><label style="margin:0;min-width:110px"><input id="autoWorld" type="checkbox" checked> ساخت خودکار جهان</label></div>
+<div class="timeline"><div class="small">TIMELINE — زمان‌بندی صحنه</div><div class="track"><span></span></div><div class="track"><span></span></div><div class="small">ردیف ۱: حرکت کاراکتر · ردیف ۲: صدای صحنه</div></div>
+</section>
+<aside class="panel right"><h3>تنظیمات و صدا</h3><div class="panel-body">
+<div class="group"><label>انتخاب عنصر برای ویرایش</label><select id="selected"><option value="hero">کاراکتر اصلی</option></select></div>
+<div class="group"><label>نام عنصر</label><input id="itemName" type="text" value="کاراکتر اصلی"></div>
+<div class="row"><div><label>مقیاس</label><input id="scale" type="number" min=".3" max="3" step=".1" value="1"></div><div><label>سرعت</label><input id="speed" type="number" min="0" max="8" step=".1" value="2"></div></div>
+<div class="row"><div><label>رنگ اصلی</label><input id="color" type="color" value="#eeeeee"></div><div><label>رنگ تأکیدی</label><input id="accent" type="color" value="#d71920"></div></div>
+<div class="row"><div><label>موقعیت افقی</label><input id="posX" type="number" value="280"></div><div><label>موقعیت عمودی</label><input id="posY" type="number" value="520"></div></div>
+<button id="apply" style="width:100%">اعمال تنظیمات</button>
+<div class="group"><label>موتور گفتار — متن به صدا</label><textarea id="speechText" rows="3" placeholder="متن دیالوگ را بنویس..."></textarea><div class="row"><select id="voiceGender"><option value="female">صدای زن</option><option value="male">صدای مرد</option></select><select id="voiceLang"><option value="fa-IR">فارسی</option><option value="en-US">انگلیسی</option></select></div><button id="speak" style="width:100%">▶ پخش دیالوگ</button><div class="small" id="voiceInfo">از صداهای نصب‌شده روی مرورگر/سیستم استفاده می‌شود؛ انتخاب صدای زن یا مرد به موجود بودن صدای مناسب بستگی دارد.</div></div>
+<div class="group"><label>موسیقی و افکت صوتی</label><label class="filebtn" style="display:block;text-align:center">＋ افزودن فایل صوتی<input id="audioFile" type="file" accept="audio/*" hidden></label><audio id="audio" controls style="width:100%;margin-top:8px"></audio><button id="stopAudio" style="width:100%">توقف صدا</button></div>
+<div class="group"><label>ظاهر جهان</label><select id="worldMood"><option value="noir">نوآر سیاه‌وسفید + قرمز</option><option value="mono">سیاه‌وسفید</option><option value="red">نوآر با قرمز پررنگ</option></select><label style="margin-top:8px"><input id="rainToggle" type="checkbox" checked> باران سینمایی</label><label><input id="grainToggle" type="checkbox" checked> بافت دانه فیلم</label></div>
+<div class="hint">رندر در این نسخه از ضبط صحنه در مرورگر استفاده می‌کند. فرمت خروجی به پشتیبانی مرورگر بستگی دارد (معمولاً WebM).</div>
+</div></aside>
+</main><footer>SUDIO NOIR STUDIO · GitHub Pages Edition · ساخت جهان رویه‌ای بدون سرور</footer>
+<script>
+(()=>{
+const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d'),W=1280,H=720;
+let running=false,last=0,elapsed=0,camera=0,objects=[],characters=[],rain=[],recorder=null,chunks=[],audioUrl=null;
+const $=id=>document.getElementById(id);
+const hero={id:'hero',name:'کاراکتر اصلی',x:280,y:520,scale:1,speed:2,color:'#eeeeee',accent:'#d71920',type:'hero',phase:0};
+characters.push(hero);
+const palettes={noir:{bg:'#09090b',sky:'#101014',ground:'#111114',line:'#eeeeee',red:'#d71920'},mono:{bg:'#09090b',sky:'#101014',ground:'#111114',line:'#eeeeee',red:'#eeeeee'},red:{bg:'#080808',sky:'#17090b',ground:'#10090a',line:'#eeeeee',red:'#f01825'}};
+function hash(n){let x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x)}
+function worldBuilding(i){let x=i*210-camera+((camera%210));let h=180+hash(i+5)*280,w=130+hash(i+9)*65;return{x,y:520-h,w,h,seed:i}}
+function drawBuilding(b,p){ctx.fillStyle='#111114';ctx.fillRect(b.x,b.y,b.w,b.h);ctx.strokeStyle='#d5d5d5';ctx.lineWidth=3;ctx.strokeRect(b.x,b.y,b.w,b.h);ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(b.x+b.w*.5,b.y-22);ctx.lineTo(b.x+b.w,b.y);ctx.stroke();for(let yy=b.y+28;yy<510;yy+=43)for(let xx=b.x+18;xx<b.x+b.w-10;xx+=35){ctx.fillStyle=hash(b.seed+xx+yy)>.38?'#bcbcbc':'#27272b';ctx.fillRect(xx,yy,15,22);if(hash(b.seed+xx)>.78){ctx.fillStyle=p.red;ctx.fillRect(xx+5,yy+4,5,5)}}}
+function drawBackground(p){ctx.fillStyle=p.bg;ctx.fillRect(0,0,W,H);ctx.fillStyle=p.sky;ctx.fillRect(0,0,W,520);
+ctx.fillStyle='#202024';ctx.beginPath();ctx.arc(1000,140,65,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#ddd';ctx.lineWidth=3;ctx.stroke();
+let start=Math.floor(camera/210)-1;for(let i=start;i<start+9;i++)drawBuilding(worldBuilding(i),p);
+ctx.fillStyle=p.ground;ctx.fillRect(0,520,W,200);ctx.strokeStyle='#eee';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,520);ctx.lineTo(W,520);ctx.stroke();
+ctx.strokeStyle='#777';ctx.setLineDash([50,35]);ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,650);ctx.lineTo(W,650);ctx.stroke();ctx.setLineDash([]);
+for(let i=0;i<7;i++){let x=((i*220-camera*.6)%1500+1500)%1500-100;ctx.strokeStyle='#444';ctx.beginPath();ctx.moveTo(x,520);ctx.lineTo(x-20,690);ctx.stroke()}}
+function drawHero(c){let x=c.x,y=c.y,s=c.scale,walk=running?Math.sin(c.phase)*18:0;ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.strokeStyle=c.color;ctx.fillStyle=c.color;ctx.lineWidth=8;ctx.lineCap='round';
+ctx.beginPath();ctx.ellipse(0,-92,23,29,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#080808';ctx.fillRect(-25,-111,50,10);ctx.fillRect(-15,-125,30,15);
+ctx.strokeStyle=c.color;ctx.beginPath();ctx.moveTo(0,-60);ctx.lineTo(0,-5);ctx.stroke();ctx.beginPath();ctx.moveTo(0,-48);ctx.lineTo(-24,-24+walk*.35);ctx.moveTo(0,-48);ctx.lineTo(25,-24-walk*.35);ctx.stroke();
+ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(-17+walk,-0);ctx.moveTo(0,-5);ctx.lineTo(18-walk,0);ctx.stroke();
+ctx.fillStyle=c.accent;ctx.fillRect(-11,-83,22,8);ctx.restore()}
+function drawObject(o){let x=o.x-camera,y=o.y,s=o.scale||1;ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.strokeStyle=o.color||'#eee';ctx.fillStyle='#151519';ctx.lineWidth=4;
+switch(o.type){case'car':ctx.fillRect(-65,-34,130,35);ctx.strokeRect(-65,-34,130,35);ctx.beginPath();ctx.moveTo(-40,-34);ctx.lineTo(-18,-58);ctx.lineTo(35,-58);ctx.lineTo(53,-34);ctx.stroke();for(let a of [-38,38]){ctx.beginPath();ctx.arc(a,4,13,0,7);ctx.stroke()}break;
+case'tree':ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-95);ctx.stroke();for(let a of [-30,0,30]){ctx.beginPath();ctx.arc(a,-100-Math.abs(a)*.2,32,0,7);ctx.stroke()}break;
+case'lamp':ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-135);ctx.lineTo(35,-135);ctx.stroke();ctx.fillStyle='#eee';ctx.fillRect(27,-145,18,14);break;
+case'barrel':ctx.fillRect(-22,-55,44,55);ctx.strokeRect(-22,-55,44,55);ctx.beginPath();ctx.moveTo(-22,-40);ctx.lineTo(22,-40);ctx.moveTo(-22,-12);ctx.lineTo(22,-12);ctx.stroke();break;
+case'sign':ctx.fillRect(-48,-95,96,48);ctx.strokeRect(-48,-95,96,48);ctx.beginPath();ctx.moveTo(0,-47);ctx.lineTo(0,0);ctx.stroke();break;
+case'bench':ctx.fillRect(-48,-30,96,10);ctx.fillRect(-42,-20,8,20);ctx.fillRect(34,-20,8,20);ctx.strokeRect(-48,-30,96,10);break;
+case'moon':ctx.beginPath();ctx.arc(0,-30,35,0,7);ctx.stroke();break;
+case'rain':break;
+default:ctx.fillRect(-55,-100,110,100);ctx.strokeRect(-55,-100,110,100)}
+ctx.restore()}
+function drawRain(){ctx.strokeStyle='#aaa';ctx.globalAlpha=.35;ctx.lineWidth=2;for(let i=0;i<110;i++){let x=(hash(i+Math.floor(elapsed*20))*W),y=(hash(i+88+Math.floor(elapsed*50))*H);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-9,y+24);ctx.stroke()}ctx.globalAlpha=1}
+function render(){let mood=$('worldMood').value,p=palettes[mood];drawBackground(p);objects.forEach(drawObject);characters.forEach(drawHero);if($('rainToggle').checked)drawRain();if($('grainToggle').checked){ctx.fillStyle='rgba(255,255,255,.035)';for(let i=0;i<600;i++){let x=hash(i+Math.floor(elapsed*13))*W,y=hash(i+400)*H;ctx.fillRect(x,y,1,1)}}}
+function loop(t){if(!running)return;let dt=Math.min((t-last)/1000||0,.05);last=t;elapsed+=dt;camera+=hero.speed*60*dt;hero.phase+=dt*8;characters.slice(1).forEach(c=>c.phase+=dt*8);$('clock').textContent=new Date(elapsed*1000).toISOString().slice(14,19);render();requestAnimationFrame(loop)}
+function start(){if(running)return;running=true;last=performance.now();requestAnimationFrame(loop)}
+function stop(){running=false}
+function addObject(type){let o={id:'o'+Date.now()+Math.random(),type,name:({building:'ساختمان',lamp:'چراغ خیابان',car:'ماشین',tree:'درخت',barrel:'بشکه',sign:'تابلو',bench:'نیمکت',moon:'ماه',rain:'باران'})[type]||type,x:camera+850,y:({building:520,lamp:520,car:520,tree:520,barrel:520,sign:520,bench:520,moon:210,rain:0})[type]||520,scale:1,color:'#eeeeee'};objects.push(o);refreshLists();$('selected').add(new Option(o.name,o.id));$('selected').value=o.id;loadSelected()}
+function addCharacter(){let n=characters.length+1,c={id:'c'+Date.now(),name:'کاراکتر '+n,x:420+characters.length*65,y:520,scale:1,speed:hero.speed,color:'#eeeeee',accent:'#d71920',phase:0,type:'hero'};characters.push(c);refreshLists();$('selected').add(new Option(c.name,c.id));$('selected').value=c.id;loadSelected()}
+function refreshLists(){$('characterList').innerHTML='';characters.forEach(c=>{let d=document.createElement('div');d.className='asset';d.innerHTML='<span>● '+c.name+'</span><button data-del="'+c.id+'">حذف</button>';$('characterList').append(d)});$('objectList').innerHTML=objects.length?'':'<div class="small">هنوز آبجکتی اضافه نشده است.</div>';objects.forEach(o=>{let d=document.createElement('div');d.className='asset';d.innerHTML='<span>◆ '+o.name+'</span><button data-del="'+o.id+'">حذف</button>';$('objectList').append(d)});document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{let id=b.dataset.del;characters=characters.filter(x=>x.id!==id);objects=objects.filter(x=>x.id!==id);[...$('selected').options].forEach(op=>{if(op.value===id)op.remove()});refreshLists();$('selected').value='hero';loadSelected();render()})}
+function getItem(){let id=$('selected').value;return characters.find(x=>x.id===id)||objects.find(x=>x.id===id)||hero}
+function loadSelected(){let o=getItem();$('itemName').value=o.name;$('scale').value=o.scale||1;$('speed').value=o.speed||0;$('color').value=o.color||'#eeeeee';$('accent').value=o.accent||'#d71920';$('posX').value=o.x;$('posY').value=o.y}
+$('selected').onchange=loadSelected;
+$('apply').onclick=()=>{let o=getItem();o.name=$('itemName').value;o.scale=+ $('scale').value||1;o.speed=+ $('speed').value||0;o.color=$('color').value;o.accent=$('accent').value;o.x=+$('posX').value;o.y=+$('posY').value;refreshLists();render()};
+document.querySelectorAll('[data-object]').forEach(b=>b.onclick=()=>addObject(b.dataset.object));
+$('addCharacter').onclick=addCharacter;$('play').onclick=start;$('pause').onclick=stop;$('step').onclick=()=>{camera+=hero.speed*60/12;hero.phase+=.7;render()};$('reset').onclick=()=>{stop();elapsed=0;camera=0;hero.phase=0;$('clock').textContent='00:00';render()};
+$('newScene').onclick=()=>{stop();objects=[];characters=[hero];hero.x=280;camera=0;elapsed=0;$('selected').innerHTML='<option value="hero">کاراکتر اصلی</option>';refreshLists();loadSelected();render()};
+$('speak').onclick=()=>{let text=$('speechText').value.trim();if(!text)return;if(!('speechSynthesis'in window)){alert('مرورگر شما موتور گفتار ندارد.');return}speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(text);u.lang=$('voiceLang').value;let voices=speechSynthesis.getVoices();let lang=u.lang.split('-')[0],gender=$('voiceGender').value;let candidates=voices.filter(v=>v.lang.toLowerCase().startsWith(lang));let named=candidates.filter(v=>gender==='female'?/female|woman|zira|sara|susan|hazel|aria|jenny|female|woman/i.test(v.name):/male|man|david|mark|guy|george|male|man/i.test(v.name));if(named.length)u.voice=named[0];else if(candidates.length)u.voice=candidates[0];$('voiceInfo').textContent=named.length?'صدای متناسب با انتخاب شما انتخاب شد.':'صدای دقیق زن/مرد در سیستم پیدا نشد؛ صدای پیش‌فرض زبان استفاده می‌شود.';speechSynthesis.speak(u)};
+$('audioFile').onchange=e=>{let f=e.target.files[0];if(!f)return;if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(f);$('audio').src=audioUrl;$('audio').load()};
+$('stopAudio').onclick=()=>{$('audio').pause();if('speechSynthesis'in window)speechSynthesis.cancel()};
+$('renderTop').onclick=renderVideo;
+async function renderVideo(){if(!canvas.captureStream||!window.MediaRecorder){alert('ضبط ویدئو در این مرورگر پشتیبانی نمی‌شود. از Chrome یا Edge دسکتاپ استفاده کن.');return}stop();render();let stream=canvas.captureStream(30);let a=$('audio');let audioStream=null;try{if(a.captureStream)audioStream=a.captureStream()}catch(e){}if(audioStream)audioStream.getAudioTracks().forEach(t=>stream.addTrack(t));let mime=['video/mp4;codecs=avc1','video/webm;codecs=vp9','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'';try{recorder=new MediaRecorder(stream,mime?{mimeType:mime}:{});chunks=[];recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{let blob=new Blob(chunks,{type:recorder.mimeType||'video/webm'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='sudio-noir-scene.'+(blob.type.includes('mp4')?'mp4':'webm');link.click();setTimeout(()=>URL.revokeObjectURL(url),2000);stream.getTracks().forEach(t=>t.stop())};recorder.start();start();setTimeout(()=>{stop();if(recorder&&recorder.state!=='inactive')recorder.stop()},10000);alert('ضبط ۱۰ ثانیه‌ای شروع شد. پس از پایان، فایل ویدئویی ذخیره می‌شود.')}catch(e){alert('خطا در شروع ضبط: '+e.message)}}
+render();refreshLists();loadSelected();
+})();
+</script>
+</body></html>
