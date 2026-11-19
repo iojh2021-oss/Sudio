@@ -9,10 +9,10 @@ import time
 from PIL import Image
 from huggingface_hub import InferenceClient
 
-# FLUX.1-dev is the quality-first base generator. Kontext is used only to
-# preserve visual identity when extending an existing segment.
+# Schnell creates the initial image under Apache-2.0. Kontext edits the
+# previous image to preserve its visual identity during scene continuation.
 BASE_MODEL = "black-forest-labs/FLUX.1-schnell"
-CONTINUATION_MODEL = "black-forest-labs/FLUX.1-schnell"
+CONTINUATION_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
 OUT = pathlib.Path("generated-world")
 WIDTH, HEIGHT = 1024, 576
 TILE_WIDTH = 1280
@@ -104,17 +104,28 @@ def main():
         used_model = args.base_model
 
         if index > 0 and previous_path.is_file():
-            print(f"Continuing segment {index} using the previous segment as image context.", flush=True)
+            print(f"Continuing scene {index} with FLUX Kontext image editing.", flush=True)
             try:
-                reference = continuation_reference(previous_path)
+                with Image.open(previous_path) as previous:
+                    reference = previous.convert("RGB").resize(
+                        (WIDTH, HEIGHT), Image.Resampling.LANCZOS
+                    )
                 image = client.image_to_image(
                     reference,
                     prompt=(
-                        f"{prompt} Use the input as a strict visual reference for the same "
-                        "noir city and continue the street into a new adjacent block. "
-                        "Preserve the same filmic lighting, fog, wet asphalt and architecture."
+                        "Create the next forward view of the exact same photorealistic "
+                        "1930s noir city avenue, as if the camera has moved one city block "
+                        "forward along the same street. Preserve the same architectural "
+                        "identity, skyline language, street width, vanishing-point direction, "
+                        "rain, wet asphalt, fog density, lighting, exposure and cold blue-gray "
+                        "cinematic color grade. Introduce new adjacent buildings and storefronts; "
+                        "do not reproduce the exact same foreground buildings. No people, "
+                        "no text, no collage, no illustration."
                     ),
                     model=args.continuation_model,
+                    num_inference_steps=28,
+                    guidance_scale=3.5,
+                    negative_prompt=NEGATIVE,
                 )
                 generation_mode = "image-to-image-guided-continuation"
                 used_model = args.continuation_model
@@ -167,7 +178,10 @@ def main():
         "version": 3,
         "model": args.base_model,
         "continuation_model": args.continuation_model,
-        "license": "Apache-2.0",
+        "licenses": {
+            "initial_generation": "Apache-2.0 (FLUX.1-schnell)",
+            "image_continuation": "FLUX.1-dev Non-Commercial License (FLUX.1-Kontext-dev)",
+        },
         "width": WIDTH,
         "height": HEIGHT,
         "tile_width": TILE_WIDTH,
