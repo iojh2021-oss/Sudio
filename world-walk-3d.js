@@ -127,7 +127,7 @@ function move(dt){
  hero.userData.legs[0].rotation.x=amp;hero.userData.legs[1].rotation.x=-amp;
  hero.userData.arms[0].rotation.x=-amp*.72;hero.userData.arms[1].rotation.x=amp*.72;
  hero.position.y=moving?Math.abs(Math.sin(t*10))*.035:0;
- const target=new THREE.Vector3(hero.position.x*.45,2.65,hero.position.z+7.4);
+ const target=new THREE.Vector3(hero.position.x*.45,2.65,hero.position.z-12);
  camera.position.lerp(new THREE.Vector3(hero.position.x*.32,4.0,hero.position.z+10.5),1-Math.exp(-dt*3.4));
  camera.lookAt(target);
  const chunkIndex=Math.max(0,Math.floor(-hero.position.z/52));for(let i=chunkIndex;i<chunkIndex+5;i++)makeChunk(i);
