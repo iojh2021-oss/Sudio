@@ -35,15 +35,25 @@ Open `index.html` in a modern browser or serve the folder using any static file 
 
 The Pages workflow checks HTML IDs and JavaScript syntax, then runs deterministic chunk-generation tests with Node.js before deployment.
 
-## AI image-world generation (online generation + offline playback)
+## GitHub-only world generation
 
-The image-world layer uses Hugging Face Inference Providers. `black-forest-labs/FLUX.1-schnell` (Apache-2.0) creates the first cinematic noir image. For reference-guided scene continuation, `black-forest-labs/FLUX.1-Kontext-dev` edits the preceding image to preserve the city's visual identity. Kontext-dev is governed by the FLUX.1-dev Non-Commercial License; review and accept its terms before enabling it, and do not use it for commercial deployment without the required permission. Images are generated outside the render loop. Generated WebP images are committed under `generated-world/`, loaded by the studio, and cached in IndexedDB for later offline playback. The compact procedural world remains the fallback when no AI tiles are available.
+Sudio's selected architecture uses GitHub as the only project platform. GitHub Pages serves the static studio; GitHub Actions trains and validates small offline models and publishes the site. No VPS, external GPU service, hosted inference API, or browser API token is part of the design.
 
-### Enable image generation
-1. Accept the model access conditions on the Hugging Face model page and create a token with **Inference Providers** permission.
-2. Add it as a repository Actions secret named `HF_TOKEN`. Never put the token in browser JavaScript or commit it.
-3. Open **Actions → Generate AI Noir World Tiles → Run workflow**. Choose the first tile index and generate 4 tiles for the initial batch.
-4. The workflow generates images and commits them. The Pages workflow deploys the new tiles automatically.
-5. Open the studio online once; generated tiles are cached locally and can then be replayed offline.
+### Runtime architecture
 
-Hosted inference may consume Hugging Face credits or incur provider charges. The site/APK does not include the model weights or API token. This is batch image generation, not per-frame live diffusion. Reference-guided editing improves style continuity, but adjacent city views still require visual review; exact seamless geographic continuity is not guaranteed.
+- **Browser renderer:** the visitor's device performs interactive rendering locally. The browser GPU (WebGL2 where supported) is the only practical place for continuous, interactive high-detail rendering under the no-cloud-GPU constraint. GitHub Actions does not render each live frame.
+- **World director:** a compact deterministic CPU model chooses district grammar, atmosphere and scene events. The current 4-input / 8-hidden / 4-output MLP is a small district planner, not a photorealistic image or video model.
+- **Procedural world:** seeded chunks generate persistent city geometry and props as the camera moves. A bounded cache controls memory use.
+- **Visual synthesis:** geometry, physically-inspired materials, fog, rain, reflections, lighting and temporal effects are generated locally by shaders and procedural meshes. No pre-rendered image plates are required.
+- **Continuity memory:** stable world seed, chunk coordinates, district decisions, landmarks and user edits preserve the identity of revisited places.
+- **GitHub Actions:** CPU-only training, deterministic tests, bundle checks and Pages deployment. The standard public Ubuntu runner currently provides 4 vCPU and 16 GB RAM; it is not a general-purpose video-generation GPU. See [GitHub-hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+### Quality and hardware limits
+
+The current renderer is still a 2D Canvas implementation. The target upgrade is a progressive WebGL2 renderer, with a Canvas fallback for unsupported devices. It should be implemented in stages: camera and depth pipeline; instanced building geometry; PBR-like stone/glass/wet-road materials; shadow and fog passes; rain and reflection effects; then deterministic streaming and visual regression tests.
+
+A Wan/LTX-class diffusion video model is not a viable runtime dependency on standard GitHub-hosted CPU runners. This GitHub-only architecture therefore does not claim text-to-video diffusion quality. It targets a continuously generated interactive world, using the visitor's local GPU for rendering and GitHub Actions only for lightweight training and verification.
+
+### Validation
+
+The Pages workflow must test the trained planner, deterministic chunk identity, chunk streaming, bounded cache behavior, and renderer fallback. A successful Pages deployment proves the website built and published; it does not by itself prove photorealistic quality or GPU rendering performance.
