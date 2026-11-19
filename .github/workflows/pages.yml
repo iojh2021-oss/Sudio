@@ -73,6 +73,11 @@ jobs:
           const interaction = world.interactAt(480, 960);
           assert.equal(interaction.ok, true, 'nearby generated props must be interactable');
           assert.ok(typeof interaction.message === 'string' && interaction.message.length > 0, 'interaction must return a user-facing response');
+          const obstacle = world.getCollisionAt(480, 960);
+          assert.ok(obstacle && obstacle.solid, 'solid generated props must be detectable as obstacles');
+          const cleared = world.getCollisionAt(obstacle.worldX, 0);
+          world.interactAt(obstacle.worldX, 0);
+          assert.equal(world.getCollisionAt(obstacle.worldX, 0), null, 'interacting with an obstacle must clear its collision');
           console.log('Live world engine tests passed');
           JS
       - name: Configure Pages
