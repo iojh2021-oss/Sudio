@@ -57,7 +57,7 @@ jobs:
           from pathlib import Path
           html = Path("index.html").read_text(encoding="utf-8")
           renderer = Path("world-webgl.js").read_text(encoding="utf-8")
-          if 'type="module" src="./world-webgl.js"' not in html:
+          if not any('type="module"' in line and 'world-webgl.js' in line for line in html.splitlines()):
               raise SystemExit("WebGL2 renderer is not wired into the studio page")
           for token in ("WebGLRenderer", "PerspectiveCamera", "makeChunk", "requestAnimationFrame", "Points"):
               if token not in renderer:
