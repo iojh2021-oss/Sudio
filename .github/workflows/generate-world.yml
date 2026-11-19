@@ -1,5 +1,10 @@
 name: Generate AI Noir World Tiles
 on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/generate_world_tiles.py"
+      - ".github/workflows/generate-world.yml"
   workflow_dispatch:
     inputs:
       start:
