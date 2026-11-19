@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Generate high-detail cinematic noir city segments for Sudio's offline world."""
 import argparse
+import hashlib
 import json
 import os
 import pathlib
 import time
+from datetime import datetime, timezone
 
 from PIL import Image
 from huggingface_hub import InferenceClient
@@ -155,9 +157,11 @@ def main():
         image.save(output_path, "WEBP", quality=96, method=6)
         if not output_path.is_file() or output_path.stat().st_size < 10000:
             raise SystemExit(f"Generated image failed validation: {output_path}")
+        digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
         existing[index] = {
             "index": index,
             "file": filename,
+            "sha256": digest,
             "seed": 73000 + index,
             "model": used_model,
             "base_model": args.base_model,
@@ -175,7 +179,8 @@ def main():
 
     tiles = [existing[key] for key in sorted(existing)]
     manifest = {
-        "version": 3,
+        "version": 4,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "model": args.base_model,
         "continuation_model": args.continuation_model,
         "licenses": {
@@ -189,12 +194,23 @@ def main():
         "tiles": tiles,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    missing = [
-        tile["file"] for tile in tiles
-        if not (OUT / tile["file"]).is_file()
-    ]
+    missing = []
+    for tile in tiles:
+        image_path = OUT / tile["file"]
+        if not image_path.is_file():
+            missing.append(tile["file"])
+            continue
+        with Image.open(image_path) as check:
+            if check.format != "WEBP" or check.size != (WIDTH, HEIGHT):
+                raise SystemExit(f"Invalid image format or dimensions: {image_path}")
+        digest = hashlib.sha256(image_path.read_bytes()).hexdigest()
+        if tile.get("sha256") and tile["sha256"] != digest:
+            raise SystemExit(f"Image hash mismatch: {image_path}")
+        tile["sha256"] = digest
+        tile["bytes"] = image_path.stat().st_size
     if missing:
         raise SystemExit("Manifest references missing image files: " + ", ".join(missing))
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(
         f"Manifest verified: {len(tiles)} image files; "
         f"{sum(1 for t in tiles if t.get('generation') == 'image-to-image-guided-continuation')} "
