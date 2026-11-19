@@ -98,31 +98,23 @@ jobs:
           assert.ok(page.includes('function interactWithWorld()'), 'keyboard and touch must share interaction logic');
           console.log('Offline neural world planner and live world engine tests passed');
           JS
-      - name: Install FLUX image generation dependency
-        run: python3 -m pip install --disable-pip-version-check "huggingface_hub>=0.30" pillow
-      - name: Generate real FLUX world images when credentials are available
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        shell: bash
+      - name: Verify live procedural world runtime
         run: |
-          if [ -z "$HF_TOKEN" ]; then
-            echo "::warning::HF_TOKEN is not available; publishing the current image set and procedural fallback."
-            exit 0
-          fi
-          python3 tools/generate_world_tiles.py --count 4 --start 0
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          p=Path("generated-world/manifest.json")
-          data=json.loads(p.read_text())
-          if len(data.get("tiles", [])) < 4:
-              raise SystemExit("FLUX generation did not produce four world tiles")
-          for tile in data["tiles"]:
-              f=Path("generated-world")/tile["file"]
-              if not f.is_file() or f.stat().st_size < 10000:
-                  raise SystemExit(f"Missing or invalid generated tile: {f}")
-          print("Verified", len(data["tiles"]), "real FLUX image tiles")
-          PY
+          node - <<'JS'
+          const assert = require('node:assert/strict');
+          require('./world-model.js');
+          const engine = require('./world-engine.js');
+          const world = engine.create({seed:20261119,mood:'noir'});
+          const first = world.getVisibleChunks(0,1280);
+          assert.ok(first.length >= 2, 'live world must generate neighboring chunks');
+          const before = world.stats().generated;
+          world.getVisibleChunks(960,1280);
+          assert.ok(world.stats().generated > before, 'moving the camera must generate new world chunks');
+          const a = world.getVisibleChunks(0,1280).map(x=>x.seed);
+          const b = world.getVisibleChunks(0,1280).map(x=>x.seed);
+          assert.deepEqual(a,b,'already generated world chunks must remain stable');
+          console.log('Live procedural world generation, expansion, and persistence passed');
+          JS
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
