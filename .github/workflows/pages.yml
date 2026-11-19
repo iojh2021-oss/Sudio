@@ -20,6 +20,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate studio HTML and JavaScript
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("index.html").read_text(encoding="utf-8")
+          ids = re.findall(r'\\bid=["\\']([^"\\']+)["\\']', html)
+          duplicates = sorted({x for x in ids if ids.count(x) > 1})
+          if duplicates:
+              raise SystemExit("Duplicate HTML ids: " + ", ".join(duplicates))
+          scripts = re.findall(r'<script\\b[^>]*>([\\s\\S]*?)</script>', html, re.I)
+          if not scripts:
+              raise SystemExit("No inline scripts found")
+          Path("/tmp/sudio-main.js").write_text(scripts[0], encoding="utf-8")
+          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject"]
+          missing = [x for x in required if x not in html]
+          if missing:
+              raise SystemExit("Missing required studio controls: " + ", ".join(missing))
+          print(f"Validated {len(ids)} unique ids and {len(scripts)} inline scripts")
+          PY
+          node --check /tmp/sudio-main.js
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
