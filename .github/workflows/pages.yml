@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Train compact offline world model
+        run: python3 tools/train_world_model.py
       - name: Validate studio HTML and JavaScript
         shell: bash
         run: |
@@ -43,7 +45,7 @@ jobs:
               scripts.append(path)
           if not scripts:
               raise SystemExit("No inline scripts found")
-          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject", "world-engine.js", "worldSeed", "worldRegenerate", "worldStatus"]
+          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject", "world-engine.js", "world-model.js", "worldSeed", "worldRegenerate", "worldStatus"]
           missing = [x for x in required if x not in html]
           if missing:
               raise SystemExit("Missing required studio controls: " + ", ".join(missing))
@@ -56,7 +58,7 @@ jobs:
           done
           node - <<'JS'
           const assert = require('node:assert/strict');
-          const engine = require('./world-engine.js');
+          require('./world-model.js');\n          const engine = require('./world-engine.js');\n          const neural = engine.director(20261119, 8, {mood:'noir'});\n          assert.equal(neural.planner, 'neural', 'trained neural world planner must be loaded');\n          assert.ok(neural.confidence > 0 && neural.confidence <= 1, 'neural planner must expose valid confidence');\n          assert.deepEqual(engine.director(20261119, 8, {mood:'noir'}), neural, 'neural planner must be deterministic for the same seed and position');
           const a = engine.makeChunk(77, 3, {mood:'noir'});
           const b = engine.makeChunk(77, 3, {mood:'noir'});
           assert.deepEqual(a, b, 'same seed and index must create identical chunks');
@@ -87,7 +89,7 @@ jobs:
           const page = require('node:fs').readFileSync('index.html', 'utf8');
           assert.ok(page.includes('id="interactWorld"'), 'touch interaction control must exist');
           assert.ok(page.includes('function interactWithWorld()'), 'keyboard and touch must share interaction logic');
-          console.log('Live world engine tests passed');
+          console.log('Offline neural world planner and live world engine tests passed');
           JS
       - name: Configure Pages
         uses: actions/configure-pages@v5
