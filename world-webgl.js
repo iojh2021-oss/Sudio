@@ -13,6 +13,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
   canvas.setAttribute('aria-label','جهان سه‌بعدی زنده Sudio');
   Object.assign(canvas.style,{position:'absolute',inset:'0',width:'100%',height:'100%',display:'block'});
   stage.appendChild(canvas);
+  legacy.style.visibility='visible';
+  legacy.style.position='relative';
+  legacy.style.zIndex='0';
+  canvas.style.zIndex='1';
 
   let renderer,scene,camera;
   try {
@@ -171,8 +175,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     // Keep the proven Canvas scene underneath as a fallback; only hide it after
     // the WebGL pass has submitted actual geometry and the skyline is populated.
     if(frame===12 && chunks.size>0 && renderer.info.render.calls>35){legacy.style.visibility='hidden';}
-    const status=document.getElementById('worldStatus');
-    if(status&&frame%60===0)status.textContent='WebGL2 زنده · GPU محلی · قطعه‌های سه‌بعدی: '+chunks.size+' · بدون سرور و API';
+
   }
   window.addEventListener('beforeunload',()=>{observer.disconnect();renderer.dispose();});
   requestAnimationFrame(animate);
