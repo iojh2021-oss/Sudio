@@ -38,7 +38,17 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           START: ${{ inputs.start || '0' }}
           COUNT: ${{ inputs.count || '4' }}
-        run: python tools/generate_world_tiles.py --start "$START" --count "$COUNT"
+        shell: bash
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::HF_TOKEN is missing. Add the repository Actions secret before manual image generation."
+              exit 1
+            fi
+            echo "::warning::HF_TOKEN is missing; automatic image generation skipped."
+            exit 0
+          fi
+          python tools/generate_world_tiles.py --start "$START" --count "$COUNT"
       - name: Commit generated tiles
         run: |
           git config user.name "github-actions[bot]"
