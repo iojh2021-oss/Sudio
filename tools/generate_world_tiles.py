@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate connected photorealistic noir world tiles with Hugging Face FLUX."""
+"""Generate high-detail cinematic noir city segments for Sudio's offline world."""
 import argparse
 import json
 import os
@@ -9,25 +9,32 @@ import time
 from PIL import Image
 from huggingface_hub import InferenceClient
 
-MODEL = "black-forest-labs/FLUX.1-schnell"
+# FLUX.1-dev is the quality-first base generator. Kontext is used only to
+# preserve visual identity when extending an existing segment.
+BASE_MODEL = "black-forest-labs/FLUX.1-dev"
+CONTINUATION_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
 OUT = pathlib.Path("generated-world")
 WIDTH, HEIGHT = 1024, 576
 TILE_WIDTH = 1280
 BASE = (
-    "photorealistic cinematic 1930s noir metropolis, eye-level street-level camera, "
-    "a single very wide straight avenue receding to a deep central vanishing point, "
-    "dense tall art-deco skyscrapers and detailed old masonry buildings on both sides, "
-    "real architectural proportions, individually resolved windows and stone facades, "
-    "wet dark asphalt with physically plausible long reflections from warm windows and street lamps, "
-    "thick volumetric silver-gray fog illuminated from the distant center, dramatic backlight, "
-    "deep charcoal black and cold blue-gray palette, restrained warm ivory window lights, "
-    "subtle analog film grain, high-end live-action cinematography, realistic atmospheric perspective, "
-    "consistent horizon, consistent camera height, 16:9 wide composition, no text, no watermark"
+    "A single continuous photorealistic cinematic frame from a premium live-action "
+    "1930s noir crime film, eye-level camera centered in the middle of a broad straight "
+    "wet city avenue, strong deep central vanishing point, towering densely packed "
+    "Art Deco skyscrapers and old stone commercial buildings on both sides, richly "
+    "detailed real masonry, cornices, fire escapes, hundreds of individually visible "
+    "warm illuminated windows, authentic vintage street lamps and a few period cars, "
+    "dark rain-soaked asphalt with long physically plausible reflections, dense "
+    "volumetric silver-gray fog glowing from the far end of the avenue, dramatic "
+    "backlighting, deep charcoal black and cold blue-gray shadows, restrained ivory "
+    "window light, realistic lens response, natural film grain, subtle halation, "
+    "high dynamic range, realistic atmospheric perspective, highly detailed production "
+    "design, no people close to camera, no text, no watermark, wide 16:9 composition"
 )
 NEGATIVE = (
-    "cartoon, illustration, painting, low detail, low resolution, flat geometry, "
-    "simple rectangles, daytime, colorful neon, oversaturated, anime, text, logo, watermark, "
-    "distorted architecture, fisheye, duplicated windows, blurry, low contrast, fantasy"
+    "cartoon, illustration, painting, concept art, game art, low detail, low resolution, "
+    "flat geometry, simple rectangles, daytime, colorful neon, oversaturated, anime, "
+    "text, logo, watermark, distorted architecture, fisheye, duplicated windows, "
+    "blur, plastic materials, artificial CGI appearance, fantasy"
 )
 
 def load_manifest(path):
@@ -37,33 +44,34 @@ def load_manifest(path):
             raise ValueError("invalid manifest structure")
         return data
     except FileNotFoundError:
-        return {"version": 2, "tiles": []}
+        return {"version": 3, "tiles": []}
 
 def continuation_reference(previous_path):
-    """Use the previous tile's right edge as visual context for the next segment."""
+    """Keep a broad strip of the prior scene as visual style/scene context."""
     with Image.open(previous_path) as source:
         source = source.convert("RGB")
-        left = int(source.width * 0.38)
-        edge = source.crop((left, 0, source.width, source.height))
+        edge = source.crop((int(source.width * 0.22), 0, source.width, source.height))
         return edge.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=4)
     parser.add_argument("--start", type=int, default=0)
+    parser.add_argument("--base-model", default=BASE_MODEL)
+    parser.add_argument("--continuation-model", default=CONTINUATION_MODEL)
     args = parser.parse_args()
 
-    token = os.environ.get("HF_TOKEN")
+    token = os.environ.get("HF_TOKEN", "").strip()
     if not token:
         raise SystemExit(
-            "HF_TOKEN secret missing. Add a Hugging Face token with Inference Providers permission "
-            "to GitHub Actions secrets."
+            "HF_TOKEN is empty in this GitHub Actions job. Add it under repository "
+            "Settings > Secrets and variables > Actions as HF_TOKEN."
         )
     if not 1 <= args.count <= 8 or args.start < 0:
         raise SystemExit("count must be 1..8 and start >= 0")
 
     OUT.mkdir(parents=True, exist_ok=True)
-    client = InferenceClient(provider="auto", api_key=token, timeout=600)
+    client = InferenceClient(provider="auto", api_key=token, timeout=900)
     manifest_path = OUT / "manifest.json"
     manifest = load_manifest(manifest_path)
     existing = {
@@ -76,81 +84,94 @@ def main():
         filename = f"tile-{index:04d}.webp"
         output_path = OUT / filename
         if index in existing and output_path.exists():
-            print(f"Tile {index} already exists; keeping it.", flush=True)
+            print(f"Tile {index} already exists; keeping verified image.", flush=True)
             continue
 
         variation = (
-            "the avenue continues forward into another block, foreground facades frame the view"
+            "the avenue advances past a monumental Art Deco corner tower and detailed storefronts"
             if index % 2 == 0
-            else "the same avenue continues through a new art-deco block, street lamps and storefronts"
+            else "the same avenue advances past another block of ornate stone towers, fire escapes and vintage storefronts"
         )
         prompt = (
-            f"{BASE}. {variation}. This is world segment {index}; preserve the exact same "
-            "visual identity, weather, perspective, horizon and street direction as neighboring segments. "
-            "Do not create a new camera angle or a different city."
+            f"{BASE}. {variation}. World segment {index}. Keep the same camera height, "
+            "street axis, horizon, weather, architectural era, color grade and lighting "
+            "language as the previous segment. Compose a believable next stretch of the "
+            "same city, not a collage and not a new camera angle."
         )
         previous_path = OUT / f"tile-{index - 1:04d}.webp"
         image = None
         generation_mode = "text-to-image"
+        used_model = args.base_model
 
-        if index > 0 and previous_path.exists():
-            print(f"Extending segment {index} from the previous tile's visual edge.", flush=True)
+        if index > 0 and previous_path.is_file():
+            print(f"Continuing segment {index} using the previous segment as image context.", flush=True)
             try:
                 reference = continuation_reference(previous_path)
                 image = client.image_to_image(
-                    image=reference,
+                    reference,
                     prompt=(
-                        f"{prompt} Continue the same street beyond the previous frame. "
-                        "Use the reference image as strict visual continuity guidance; "
-                        "retain its architecture, lighting, fog density, wet-road appearance and palette, "
-                        "while revealing the next stretch of the avenue."
+                        f"{prompt} Use the input as a strict visual reference for the same "
+                        "noir city and continue the street into a new adjacent block. "
+                        "Preserve the same filmic lighting, fog, wet asphalt and architecture."
                     ),
-                    negative_prompt=NEGATIVE,
-                    num_inference_steps=6,
-                    model=MODEL,
+                    model=args.continuation_model,
                 )
-                generation_mode = "image-to-image-continuation"
+                generation_mode = "image-to-image-guided-continuation"
+                used_model = args.continuation_model
             except Exception as exc:
                 print(
-                    f"Image continuation unavailable for tile {index} ({type(exc).__name__}); "
-                    "falling back to text-to-image with the same scene specification.",
+                    f"Context continuation unavailable ({type(exc).__name__}); "
+                    "using quality-first text-to-image for this segment.",
                     flush=True,
                 )
 
         if image is None:
-            print(f"Generating segment {index} with {MODEL}.", flush=True)
+            print(f"Generating segment {index} with {args.base_model}.", flush=True)
             image = client.text_to_image(
                 prompt,
-                model=MODEL,
+                model=args.base_model,
                 width=WIDTH,
                 height=HEIGHT,
-                num_inference_steps=6,
+                num_inference_steps=28,
                 seed=73000 + index,
                 negative_prompt=NEGATIVE,
+                guidance_scale=3.5,
             )
 
-        image = image.convert("RGB").resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
-        image.save(output_path, "WEBP", quality=95, method=6)
+        image = image.convert("RGB")
+        if image.size != (WIDTH, HEIGHT):
+            image = image.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS)
+        image.save(output_path, "WEBP", quality=96, method=6)
+        if not output_path.is_file() or output_path.stat().st_size < 10000:
+            raise SystemExit(f"Generated image failed validation: {output_path}")
         existing[index] = {
             "index": index,
             "file": filename,
             "seed": 73000 + index,
-            "model": MODEL,
+            "model": used_model,
+            "base_model": args.base_model,
             "generation": generation_mode,
             "width": WIDTH,
             "height": HEIGHT,
+            "bytes": output_path.stat().st_size,
         }
-        print(f"Saved {output_path} ({generation_mode}).", flush=True)
+        print(
+            f"Saved and verified {output_path}: {image.width}x{image.height}, "
+            f"{output_path.stat().st_size} bytes ({generation_mode}).",
+            flush=True,
+        )
         time.sleep(1)
 
     tiles = [existing[key] for key in sorted(existing)]
     manifest = {
-        "version": 2,
-        "model": MODEL,
+        "version": 3,
+        "model": args.base_model,
+        "continuation_model": args.continuation_model,
         "license": "Apache-2.0",
         "width": WIDTH,
         "height": HEIGHT,
         "tile_width": TILE_WIDTH,
+        "overlap": 128,
         "tiles": tiles,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -161,9 +182,9 @@ def main():
     if missing:
         raise SystemExit("Manifest references missing image files: " + ", ".join(missing))
     print(
-        f"Verified manifest: {len(tiles)} tiles, "
-        f"{sum(1 for t in tiles if t.get('generation') == 'image-to-image-continuation')} "
-        "continued from previous images.",
+        f"Manifest verified: {len(tiles)} image files; "
+        f"{sum(1 for t in tiles if t.get('generation') == 'image-to-image-guided-continuation')} "
+        "used image-conditioned continuation.",
         flush=True,
     )
 
