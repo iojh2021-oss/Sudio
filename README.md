@@ -42,7 +42,7 @@ Sudio's selected architecture uses GitHub as the only project platform. GitHub P
 ### Runtime architecture
 
 - **Browser renderer:** the visitor's device performs interactive rendering locally. The browser GPU (WebGL2 where supported) is the only practical place for continuous, interactive high-detail rendering under the no-cloud-GPU constraint. GitHub Actions does not render each live frame.
-- **World director:** a compact deterministic CPU model chooses district grammar, atmosphere and scene events. The current 4-input / 8-hidden / 4-output MLP is a small district planner, not a photorealistic image or video model.
+- **World director:** a compact deterministic CPU model chooses district grammar, atmosphere and scene events. The current 4-input / 8-hidden / 4-output MLP is trained against synthetic district labels, so it is a deterministic scene-planning experiment, not a model that learns visual realism or a photorealistic image/video generator.
 - **Procedural world:** seeded chunks generate persistent city geometry and props as the camera moves. A bounded cache controls memory use.
 - **Visual synthesis:** geometry, physically-inspired materials, fog, rain, reflections, lighting and temporal effects are generated locally by shaders and procedural meshes. No pre-rendered image plates are required.
 - **Continuity memory:** stable world seed, chunk coordinates, district decisions, landmarks and user edits preserve the identity of revisited places.
