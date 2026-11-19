@@ -98,6 +98,31 @@ jobs:
           assert.ok(page.includes('function interactWithWorld()'), 'keyboard and touch must share interaction logic');
           console.log('Offline neural world planner and live world engine tests passed');
           JS
+      - name: Install FLUX image generation dependency
+        if: ${{ secrets.HF_TOKEN != '' }}
+        run: python3 -m pip install --disable-pip-version-check "huggingface_hub>=0.30,<1.0" pillow
+      - name: Generate real FLUX world images
+        if: ${{ secrets.HF_TOKEN != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 tools/generate_world_tiles.py --count 4 --start 0
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("generated-world/manifest.json")
+          data=json.loads(p.read_text())
+          if len(data.get("tiles", [])) < 4:
+              raise SystemExit("FLUX generation did not produce four world tiles")
+          for tile in data["tiles"]:
+              f=Path("generated-world")/tile["file"]
+              if not f.is_file() or f.stat().st_size < 10000:
+                  raise SystemExit(f"Missing or invalid generated tile: {f}")
+          print("Verified", len(data["tiles"]), "real FLUX image tiles")
+          PY
+      - name: Report missing Hugging Face token
+        if: ${{ secrets.HF_TOKEN == '' }}
+        run: echo "::warning::HF_TOKEN is not available to this workflow; publishing with procedural fallback only."
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
