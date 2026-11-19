@@ -31,17 +31,35 @@ jobs:
           duplicates = sorted({x for x in ids if ids.count(x) > 1})
           if duplicates:
               raise SystemExit("Duplicate HTML ids: " + ", ".join(duplicates))
-          scripts = re.findall(r'<script\b[^>]*>([\s\S]*?)</script>', html, re.I)
+          scripts = re.findall(r'<script\\b(?![^>]*\\bsrc=)[^>]*>([\\s\\S]*?)</script>', html, re.I)
+          scripts = [s for s in scripts if s.strip()]
           if not scripts:
               raise SystemExit("No inline scripts found")
-          Path("/tmp/sudio-main.js").write_text(scripts[0], encoding="utf-8")
-          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject"]
+          for i, script in enumerate(scripts):
+              suffix = ".mjs" if i == len(scripts)-1 else ".js"
+              Path(f"/tmp/sudio-inline-{i}{suffix}").write_text(script, encoding="utf-8")
+          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject", "world-engine.js", "worldSeed", "worldRegenerate", "worldStatus"]
           missing = [x for x in required if x not in html]
           if missing:
               raise SystemExit("Missing required studio controls: " + ", ".join(missing))
           print(f"Validated {len(ids)} unique ids and {len(scripts)} inline scripts")
           PY
-          node --check /tmp/sudio-main.js
+          node --check world-engine.js
+          node --check /tmp/sudio-inline-0.js
+          node --check /tmp/sudio-inline-1.mjs
+          node - <<'JS'
+          const assert = require('node:assert/strict');
+          const engine = require('./world-engine.js');
+          const a = engine.makeChunk(77, 3, {mood:'noir'});
+          const b = engine.makeChunk(77, 3, {mood:'noir'});
+          assert.deepEqual(a, b, 'same seed and index must create identical chunks');
+          assert.ok(a.buildings.length > 0, 'chunk must contain generated buildings');
+          const world = engine.create({seed:77});
+          const visible = world.getVisibleChunks(0, 1280);
+          assert.ok(visible.length >= 2, 'camera window must preload neighboring chunks');
+          assert.ok(world.stats().generated > 0, 'generation stats must increment');
+          console.log('Live world engine tests passed');
+          JS
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
