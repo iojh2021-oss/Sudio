@@ -27,16 +27,16 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     console.warn('Sudio WebGL unavailable; retaining Canvas renderer.',error);
     return;
   }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.65));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25));
   renderer.outputColorSpace=THREE.SRGBColorSpace;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.15;
   scene=new THREE.Scene();
   scene.background=null;
   scene.fog=new THREE.FogExp2(0x111820,0.00135);
-  camera=new THREE.PerspectiveCamera(56,16/9,.1,2200);
-  camera.position.set(0,23,48);
-  camera.lookAt(0,18,-105);
+  camera=new THREE.PerspectiveCamera(62,16/9,.1,2200);
+  camera.position.set(0,11.5,34);
+  camera.lookAt(0,5.5,-105);
 
   const hemi=new THREE.HemisphereLight(0x9aa9b8,0x101014,1.1);scene.add(hemi);
   const moon=new THREE.DirectionalLight(0xb8c9d8,2.1);moon.position.set(-45,85,30);scene.add(moon);
@@ -68,7 +68,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
       while(cursor<chunkLength-8){
         const n=seed+slot*19+side*7;
         const width=13+rnd(n)*12,height=19+rnd(n+3)*49,depth=18+rnd(n+5)*25;
-        const x=side*(18+width*.48+rnd(n+2)*7),z=-cursor-depth*.5;
+        const x=side*(13+width*.38+rnd(n+2)*4),z=-cursor-depth*.5;
         const building=new THREE.Group();building.position.set(x,0,z);g.add(building);
         addBox(building,mats.stone,0,0,0,width,height,depth);
         addBox(building,mats.dark,0,height,0,width+1.2,1.1,depth+1.2);
@@ -96,8 +96,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     for(let i=0;i<5;i++){
       const n=seed+700+i*43;
       const width=16+rnd(n)*12,height=48+rnd(n+4)*42,depth=15+rnd(n+8)*12;
-      const x=(rnd(n+2)-.5)*27;
-      const z=-42-i*18-rnd(n+9)*13;
+      const x=(rnd(n+2)-.5)*20;
+      const z=-24-i*17-rnd(n+9)*10;
       const tower=new THREE.Group();tower.position.set(x,0,z);g.add(tower);
       addBox(tower,mats.dark,0,0,0,width,height,depth);
       addBox(tower,mats.stone,0,height*.48,depth*.501,width*.92,height*.94,.24);
@@ -135,7 +135,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     return g;
   }
   // Rain is GPU-rendered as a single point cloud.
-  const rainCount=1250,rainGeo=new THREE.BufferGeometry(),rainPos=new Float32Array(rainCount*3);
+  const rainCount=720,rainGeo=new THREE.BufferGeometry(),rainPos=new Float32Array(rainCount*3);
   for(let i=0;i<rainCount;i++){rainPos[i*3]=(Math.random()-.5)*72;rainPos[i*3+1]=Math.random()*54;rainPos[i*3+2]=-Math.random()*210;}
   rainGeo.setAttribute('position',new THREE.BufferAttribute(rainPos,3));
   const rain=new THREE.Points(rainGeo,new THREE.PointsMaterial({color:0x9eabb6,size:.105,transparent:true,opacity:.52,depthWrite:false}));scene.add(rain);
@@ -160,9 +160,9 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     const center=Math.floor(worldOffset/chunkLength);
     for(let i=center-3;i<=center+5;i++)makeChunk(i);
     camera.position.x=Math.sin(t*.00013)*.65;
-    camera.position.y=14.5+Math.sin(t*.00031)*.28;
+    camera.position.y=11.5+Math.sin(t*.00031)*.18;
     camera.position.z=42;
-    camera.lookAt(camera.position.x*.2,18,-105);
+    camera.lookAt(camera.position.x*.2,5.5,-105);
     redLight.position.x=Math.sin(t*.0004)*12;
     for(let i=0;i<rainCount;i++){
       const j=i*3;rainPos[j+1]-=dt*(17+(i%11)*1.7);rainPos[j]-=dt*2.3;
@@ -172,12 +172,16 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.m
     fogs.forEach((f,i)=>{f.position.x=Math.sin(t*.00007+i*2)*13;f.position.z=-35-i*24+Math.sin(t*.00005+i)*3;});
     renderer.render(scene,camera);
     if(frame===2){canvas.style.zIndex='1';}
-    // Keep the proven Canvas scene underneath as a fallback; only hide it after
-    // the WebGL pass has submitted actual geometry and the skyline is populated.
-    if(frame===12 && chunks.size>0 && renderer.info.render.calls>35){legacy.style.visibility='hidden';}
+    // Preserve the legacy scene as a fallback layer. Do not hide it based on
+    // draw-call counts: only a real browser visual check can certify the new scene.
+    if(frame===2){legacy.style.visibility='visible';}
+    if(frame%120===0){
+      const status=document.getElementById('worldStatus');
+      if(status)status.textContent='WebGL2 GPU · '+chunks.size+' قطعهٔ شهر · '+renderer.info.render.calls+' فراخوانی رندر · دوربین سه‌بعدی فعال';
+    }
 
   }
   window.addEventListener('beforeunload',()=>{observer.disconnect();renderer.dispose();});
   requestAnimationFrame(animate);
-  console.info('Sudio WebGL2 local GPU world renderer active');
+  console.info('Sudio WebGL2 local GPU world renderer active', {webgl2:!!renderer.getContext(),chunks:chunks.size});
 })();
