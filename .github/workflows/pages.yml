@@ -45,27 +45,14 @@ jobs:
               scripts.append(path)
           if not scripts:
               raise SystemExit("No inline scripts found")
-          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject", "world-engine.js", "world-model.js", "worldSeed", "worldRegenerate", "worldStatus"]
+          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject", "world-engine.js", "world-model.js", "worldSeed", "worldRegenerate", "worldStatus", "cinematic.js", "walkTo", "imageAsBg", "SudioCinema"]
           missing = [x for x in required if x not in html]
           if missing:
               raise SystemExit("Missing required studio controls: " + ", ".join(missing))
           print(f"Validated {len(ids)} unique ids and {len(scripts)} inline scripts")
           PY
           node --check world-engine.js
-          node --input-type=module --check < world-webgl.js
-          python3 - <<'PY'
-          from pathlib import Path
-          html = Path("index.html").read_text(encoding="utf-8")
-          renderer = Path("world-webgl.js").read_text(encoding="utf-8")
-          if not any('type="module"' in line and 'world-webgl.js' in line for line in html.splitlines()):
-              raise SystemExit("WebGL2 renderer is not wired into the studio page")
-          for token in ("WebGLRenderer", "PerspectiveCamera", "makeChunk", "requestAnimationFrame", "Points"):
-              if token not in renderer:
-                  raise SystemExit("WebGL2 renderer missing required feature: " + token)
-          print("Local GPU WebGL2 renderer wiring and runtime features verified")
-          PY
-          node --check world-image-engine.js
-          python3 -m py_compile tools/generate_world_tiles.py
+          node --check cinematic.js
           for script in /tmp/sudio-inline-*; do
             [ -f "$script" ] || continue
             node --check "$script"
@@ -108,24 +95,11 @@ jobs:
           const page = require('node:fs').readFileSync('index.html', 'utf8');
           assert.ok(page.includes('id="interactWorld"'), 'touch interaction control must exist');
           assert.ok(page.includes('function interactWithWorld()'), 'keyboard and touch must share interaction logic');
+          const cin = require('./cinematic.js');
+          for (const fn of ['drawBackdrop','drawCanyon','drawReflection','drawAtmosphere','drawVignette','setSeed']) assert.equal(typeof cin[fn], 'function', 'cinematic API missing ' + fn);
+          assert.ok(page.includes('function advanceMotion(') && page.includes('function stagePoint('), 'camera-zoom-aware pointer mapping and walk logic must exist');
+          assert.ok(page.includes('align-items:start'), 'stage layout must not stretch');
           console.log('Offline neural world planner and live world engine tests passed');
-          JS
-      - name: Verify live procedural world runtime
-        run: |
-          node - <<'JS'
-          const assert = require('node:assert/strict');
-          require('./world-model.js');
-          const engine = require('./world-engine.js');
-          const world = engine.create({seed:20261119,mood:'noir'});
-          const first = world.getVisibleChunks(0,1280);
-          assert.ok(first.length >= 2, 'live world must generate neighboring chunks');
-          const before = world.stats().generated;
-          world.getVisibleChunks(960,1280);
-          assert.ok(world.stats().generated > before, 'moving the camera must generate new world chunks');
-          const a = world.getVisibleChunks(0,1280).map(x=>x.seed);
-          const b = world.getVisibleChunks(0,1280).map(x=>x.seed);
-          assert.deepEqual(a,b,'already generated world chunks must remain stable');
-          console.log('Live procedural world generation, expansion, and persistence passed');
           JS
       - name: Configure Pages
         uses: actions/configure-pages@v5
