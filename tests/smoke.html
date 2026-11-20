@@ -1,0 +1,10 @@
+<!doctype html><meta charset=utf-8><style>html,body{margin:0;height:100%;background:#000}canvas{width:100vw;height:100vh;display:block}</style><canvas id=c></canvas>
+<script type=module>
+import { Renderer } from '../src/renderer.js'; import { CameraRig } from '../src/camera.js'; import { makeCharacter, walkTo, stepCharacter } from '../src/character.js';
+const r=new Renderer(document.getElementById('c'),{preserve:true}); window.R=r;
+const q=new URLSearchParams(location.search); r.setQuality(q.get('q')||'high'); r.setEnv({grain:+(q.get('grain')??.05),time:q.get('time')||'night',rain:+(q.get('rain')??.7),fog:+(q.get('fog')??.4),mood:q.get('mood')||'noir'});
+const cam=new CameraRig(); cam.mode=q.get('cam')||'follow'; const A=makeCharacter({preset:'detective',x:1,z:-4}),B=makeCharacter({preset:'woman',x:-2,z:-9}); walkTo(A,1,-60);walkTo(B,-1,-70);
+let t=0,last=performance.now(); window.frames=0; window.err=null;
+function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;t+=dt;try{stepCharacter(A,dt);stepCharacter(B,dt);cam.update(dt,A,t);r.render({camera:cam.state(),characters:[A,B],t});window.frames++}catch(e){window.err=e.message+e.stack;return}requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script>

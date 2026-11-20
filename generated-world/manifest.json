@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "model": "black-forest-labs/FLUX.1-schnell",
-  "license": "Apache-2.0",
-  "width": 1024,
-  "height": 576,
-  "tile_width": 1280,
-  "tiles": []
-}

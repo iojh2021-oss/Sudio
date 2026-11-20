@@ -1,121 +1,40 @@
-name: Deploy Sudio to GitHub Pages
-
+name: Sudio Pages
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
   pages: write
   id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Train compact offline world model
-        run: python3 tools/train_world_model.py
-      - name: Validate studio HTML and JavaScript
-        shell: bash
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax check
+        run: for f in src/*.js sw.js; do node --check "$f"; done
+      - name: Unit tests
+        run: npm test
+      - name: Assemble site
         run: |
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          html = Path("index.html").read_text(encoding="utf-8")
-          ids = re.findall(r"\bid=['\"]([^'\"]+)['\"]", html)
-          duplicates = sorted({x for x in ids if ids.count(x) > 1})
-          if duplicates:
-              raise SystemExit("Duplicate HTML ids: " + ", ".join(duplicates))
-          tags = re.findall(r"<script\b([^>]*)>([\s\S]*?)</script>", html, re.I)
-          scripts = []
-          for attrs, body in tags:
-              if re.search(r"\bsrc\s*=", attrs, re.I) or not body.strip():
-                  continue
-              is_module = re.search(r"""type\s*=\s*["']module["']""", attrs, re.I)
-              suffix = ".mjs" if is_module else ".js"
-              path = Path(f"/tmp/sudio-inline-{len(scripts)}{suffix}")
-              path.write_text(body, encoding="utf-8")
-              scripts.append(path)
-          if not scripts:
-              raise SystemExit("No inline scripts found")
-          required = ["cameraZoom", "cameraOffset", "openbonePlayer", "saveProject", "loadProject", "world-engine.js", "world-model.js", "worldSeed", "worldRegenerate", "worldStatus", "cinematic.js", "walkTo", "imageAsBg", "SudioCinema"]
-          missing = [x for x in required if x not in html]
-          if missing:
-              raise SystemExit("Missing required studio controls: " + ", ".join(missing))
-          print(f"Validated {len(ids)} unique ids and {len(scripts)} inline scripts")
-          PY
-          node --check world-engine.js
-          node --check cinematic.js
-          for script in /tmp/sudio-inline-*; do
-            [ -f "$script" ] || continue
-            node --check "$script"
-          done
-          node - <<'JS'
-          const assert = require('node:assert/strict');
-          require('./world-model.js');
-          const engine = require('./world-engine.js');
-          const neural = engine.director(20261119, 8, {mood:'noir'});
-          assert.equal(neural.planner, 'neural', 'trained neural world planner must be loaded');
-          assert.ok(neural.confidence > 0 && neural.confidence <= 1, 'neural planner must expose valid confidence');
-          assert.deepEqual(engine.director(20261119, 8, {mood:'noir'}), neural, 'neural planner must be deterministic for the same seed and position');
-          const a = engine.makeChunk(77, 3, {mood:'noir'});
-          const b = engine.makeChunk(77, 3, {mood:'noir'});
-          assert.deepEqual(a, b, 'same seed and index must create identical chunks');
-          assert.ok(a.buildings.length > 0, 'chunk must contain generated buildings');
-          const landmark = engine.makeChunk(77, 0, {mood:'noir'});
-          assert.ok(landmark.props.some(p => p.landmark && p.type === 'phonebooth'), 'landmark districts must include a persistent landmark');
-          const world = engine.create({seed:77});
-          const visible = world.getVisibleChunks(0, 1280);
-          assert.ok(visible.length >= 2, 'camera window must preload neighboring chunks');
-          assert.ok(world.stats().generated > 0, 'generation stats must increment');
-          const nearby = world.getNearbyProps(480, 960);
-          assert.ok(nearby.length > 0, 'nearby interaction query must return generated props');
-          assert.ok(nearby.every(p => Number.isFinite(p.worldX) && Number.isFinite(p.distance)), 'nearby props must expose world coordinates and distance');
-          const interaction = world.interactAt(480, 960);
-          assert.equal(interaction.ok, true, 'nearby generated props must be interactable');
-          assert.ok(typeof interaction.message === 'string' && interaction.message.length > 0, 'interaction must return a user-facing response');
-          const collisionWorld = SudioWorld.create({seed: 20261119, mood: 'noir'});
-          const obstacle = collisionWorld.getCollisionAt(480, 960);
-          assert.ok(obstacle && obstacle.solid, 'solid generated props must be detectable as obstacles');
-          collisionWorld.interactAt(obstacle.worldX, 0);
-          assert.equal(collisionWorld.getCollisionAt(obstacle.worldX, 0), null, 'interacting with an obstacle must clear its collision');
-          const repeat = collisionWorld.interactAt(obstacle.worldX, 0);
-          assert.equal(repeat.ok, false, 'an already-interacted prop must not be offered again');
-          const journal = collisionWorld.getJournal();
-          assert.equal(journal.length, 1, 'successful interaction must create one journal entry');
-          assert.equal(journal[0].id, obstacle.id, 'journal entry must identify the discovered prop');
-          assert.equal(collisionWorld.snapshot().journal.length, 1, 'world snapshot must preserve discovery history');
-          const page = require('node:fs').readFileSync('index.html', 'utf8');
-          assert.ok(page.includes('id="interactWorld"'), 'touch interaction control must exist');
-          assert.ok(page.includes('function interactWithWorld()'), 'keyboard and touch must share interaction logic');
-          const cin = require('./cinematic.js');
-          for (const fn of ['drawBackdrop','drawCanyon','drawReflection','drawAtmosphere','drawVignette','setSeed']) assert.equal(typeof cin[fn], 'function', 'cinematic API missing ' + fn);
-          assert.ok(page.includes('function advanceMotion(') && page.includes('function stagePoint('), 'camera-zoom-aware pointer mapping and walk logic must exist');
-          assert.ok(page.includes('align-items:start'), 'stage layout must not stretch');
-          console.log('Offline neural world planner and live world engine tests passed');
-          JS
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
+          mkdir _site
+          cp -r index.html manifest.webmanifest sw.js src icons _site/
+      - uses: actions/upload-pages-artifact@v3
         with:
-          enablement: true
-      - name: Upload static site
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
+          path: _site
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
+      url: ${{ steps.d.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: d
         uses: actions/deploy-pages@v4
