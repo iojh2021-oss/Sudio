@@ -12,6 +12,14 @@ export const PRESETS = {
 };
 export const VOICE_BASE = { male: { f0: 118, vt: 1 }, female: { f0: 214, vt: .86 }, child: { f0: 290, vt: .78 } };
 
+const COLOR_KEYS = ['coat', 'pants', 'skin', 'hair', 'hat', 'scarf', 'shoes'];
+export const HATS = [['', 'پیش‌فرض نقش'], ['none', 'بدون کلاه'], ['fedora', 'کلاه شاپو'], ['cap', 'کلاه لبه‌دار'], ['antenna', 'آنتن']];
+function cleanColors(c) { if (!c || typeof c !== 'object') return null; const o = {}; for (const k of COLOR_KEYS) { const v = c[k]; if (Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && isFinite(n))) o[k] = v.map((n) => clamp(n, 0, 1)); } return Object.keys(o).length ? o : null; }
+function cleanLook(l) { const o = {}; if (l && typeof l === 'object') { if (['none', 'fedora', 'cap', 'antenna'].includes(l.hat)) o.hat = l.hat; if (l.dress === 0 || l.dress === 1) o.dress = l.dress; if (l.longHair === 0 || l.longHair === 1) o.longHair = l.longHair; if (typeof l.width === 'number') o.width = clamp(l.width, .7, 1.5); } return o; }
+export function rgbToHex(c) { return '#' + c.map((n) => Math.round(clamp(n, 0, 1) * 255).toString(16).padStart(2, '0')).join(''); }
+export function hexToRgb(h) { const m = /^#?([0-9a-f]{6})$/i.exec(h); if (!m) return [.5, .5, .5]; const n = parseInt(m[1], 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; }
+export function effectiveColor(ch, k) { return (ch.colors && ch.colors[k]) || (PRESETS[ch.preset] || PRESETS.detective)[k]; }
+export { COLOR_KEYS };
 let nextId = 1;
 export function makeCharacter(o = {}) {
   const p = PRESETS[o.preset] || PRESETS.detective;
@@ -19,7 +27,7 @@ export function makeCharacter(o = {}) {
     id: o.id || 'c' + (nextId++), name: o.name || p.label, preset: o.preset in PRESETS ? o.preset : 'detective',
     x: o.x ?? 0, z: o.z ?? -6, heading: o.heading ?? Math.PI, speed: o.speed ?? 1.5, scale: o.scale ?? 1,
     voice: Object.assign({ gender: p.gender, pitch: VOICE_BASE[p.gender].f0, rate: 1 }, o.voice || {}),
-    path: [], phase: 0, state: 'idle', talk: 0, mouth: 0, vx: 0, vz: 0, colors: o.colors || null, _gait: 0,
+    path: [], phase: 0, state: 'idle', talk: 0, mouth: 0, vx: 0, vz: 0, colors: cleanColors(o.colors), look: cleanLook(o.look), _gait: 0,
   };
 }
 // حرکت به نقطه: صف مسیر (waypoints)
@@ -47,10 +55,10 @@ export function stepCharacter(ch, dt, input) {
 
 // قطعات رسم‌شدنی: {m: ماتریس مدل, c: رنگ, s: 0 مکعب / 1 کره, e: نورانی}
 export function characterParts(ch, t) {
-  const P = PRESETS[ch.preset] || PRESETS.detective, K = ch.colors || {}, col = (k) => K[k] || P[k];
+  const P0 = PRESETS[ch.preset] || PRESETS.detective, L = ch.look || {}, P = { ...P0, ...(L.hat !== undefined ? { hatKind: L.hat } : {}), ...(L.dress !== undefined ? { dress: L.dress } : {}), ...(L.longHair !== undefined ? { longHair: L.longHair } : {}), ...(ch.colors && ch.colors.skin ? { skin: ch.colors.skin } : {}) }, K = ch.colors || {}, col = (k) => K[k] || P[k], W = L.width || 1;
   const parts = [], g = ch._gait, run = ch.state === 'run' ? 1.6 : 1, ph = ch.phase;
   const H = ch.scale * P.height, add = (m, c, s = 0, e = 0) => parts.push({ m, c, s, e });
-  const root = chain(trans(ch.x, 0, ch.z), rotY(ch.heading), scale(H, H, H));
+  const root = chain(trans(ch.x, 0, ch.z), rotY(ch.heading), scale(H * W, H, H * W));
   const swing = Math.sin(ph) * .75 * g * run, swing2 = Math.sin(ph + Math.PI) * .75 * g * run;
   const bob = (Math.abs(Math.sin(ph)) * .045 * g * run) + Math.sin(ph * .9) * .006 * (1 - g);
   const lean = .06 * g * run + (ch.state === 'run' ? .12 : 0);

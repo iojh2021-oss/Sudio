@@ -97,15 +97,31 @@ export function makeChunk(seed, k, opts = {}) {
 
 const CAR_COLORS = [[.05, .05, .06], [.11, .12, .13], [.35, .05, .05], [.08, .12, .2], [.2, .2, .18]];
 export function carBoxes(out, x, z, head, hv) {
-  const c = CAR_COLORS[Math.floor(hv * CAR_COLORS.length) % CAR_COLORS.length], f = head;     // head: ۰ = رو به −Z ، π = رو به +Z
-  const dz = Math.cos(f) * -1;
-  push(out, x, .62, z, 1.9, .7, 4.4, c[0], c[1], c[2], KIND.SOLID, 0, 0);
-  push(out, x, 1.2, z + .1 * dz, 1.6, .55, 2.3, c[0] * .8, c[1] * .8, c[2] * .8, KIND.SOLID, 0, 0);
-  push(out, x, 1.2, z, 1.62, .4, 2.0, .12, .15, .18, KIND.SOLID, 0, 0);
-  push(out, x - .6, .75, z + 2.25 * -dz, .4, .22, .12, 1, .95, .75, KIND.EMISSIVE, 1, 0);
-  push(out, x + .6, .75, z + 2.25 * -dz, .4, .22, .12, 1, .95, .75, KIND.EMISSIVE, 1, 0);
-  push(out, x - .6, .75, z - 2.25 * -dz, .4, .2, .1, .9, .08, .05, KIND.EMISSIVE, 1, 0);
-  push(out, x + .6, .75, z - 2.25 * -dz, .4, .2, .1, .9, .08, .05, KIND.EMISSIVE, 1, 0);
+  // ماشین کلاسیک دههٔ ۱۹۳۰: کاپوت بلند، گلگیر برجسته، رینگ کروم، چراغ گرد
+  const c = CAR_COLORS[Math.floor(hv * CAR_COLORS.length) % CAR_COLORS.length], F = head === 0 ? -1 : 1;
+  const B = (l, y, w, h, len, r, g, b, kind = KIND.SOLID, lit = 0, ox = 0) => push(out, x + ox, y, z + F * l, w, h, len, r, g, b, kind, lit, 0);
+  const d = [c[0] * .55, c[1] * .55, c[2] * .55], ch = [.62, .62, .58];
+  B(-.1, .6, 1.55, .5, 4.3, c[0], c[1], c[2]);                  // شاسی/بدنه
+  B(1.25, 1.02, 1.0, .45, 1.7, c[0], c[1], c[2]);               // کاپوت باریک و بلند
+  B(-.7, 1.38, 1.5, .72, 1.9, c[0], c[1], c[2]);                // کابین
+  B(-.68, 1.42, 1.54, .42, 1.6, .05, .07, .09);                 // شیشه‌ها
+  B(-.7, 1.8, 1.42, .08, 1.7, d[0], d[1], d[2]);                // سقف
+  B(-1.85, 1.02, 1.4, .62, .75, c[0], c[1], c[2]);              // صندوق عقب
+  for (const sx of [-1, 1]) {
+    B(1.5, .78, .38, .2, 1.3, c[0], c[1], c[2], KIND.SOLID, 0, sx * .86);   // گلگیر جلو
+    B(-1.3, .78, .38, .2, 1.4, c[0], c[1], c[2], KIND.SOLID, 0, sx * .86);  // گلگیر عقب
+    B(.1, .42, .26, .06, 1.2, .03, .03, .04, KIND.SOLID, 0, sx * .93);      // رکاب
+    for (const l of [1.5, -1.35]) {
+      B(l, .36, .26, .72, .72, .02, .02, .025, KIND.SOLID, 0, sx * .9);     // لاستیک
+      B(l, .36, .06, .4, .4, ch[0], ch[1], ch[2], KIND.EMISSIVE, .35, sx * 1.04); // رینگ کروم
+      B(l, .36, .09, .14, .14, .9, .9, .85, KIND.EMISSIVE, .5, sx * 1.07);  // کلاهک
+    }
+    B(1.78, 1.12, .34, .34, .24, 1, .93, .7, KIND.EMISSIVE, 1, sx * .7);    // چراغ جلوی گرد
+    B(-2.25, 1.0, .16, .16, .08, .95, .07, .04, KIND.EMISSIVE, 1, sx * .55);// چراغ عقب
+  }
+  B(2.08, .82, .5, .48, .07, ch[0], ch[1], ch[2], KIND.EMISSIVE, .25);      // جلوپنجره کروم
+  B(2.25, .48, 1.75, .09, .12, ch[0], ch[1], ch[2], KIND.EMISSIVE, .3);     // سپر جلو
+  B(-2.28, .48, 1.6, .09, .12, ch[0], ch[1], ch[2], KIND.EMISSIVE, .3);     // سپر عقب
 }
 // ماشین‌های متحرک: موقعیت تابع زمان است (قطعی؛ بدون وضعیت) → بی‌پایان
 export function movingCars(seed, t, zMin, zMax, density = 1) {

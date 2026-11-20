@@ -1,7 +1,7 @@
 import { Renderer, QUALITY, TIMES } from './renderer.js';
 import { CameraRig } from './camera.js';
 import { Director } from './director.js';
-import { PRESETS, hitCharacter, walkTo } from './character.js';
+import { PRESETS, hitCharacter, walkTo, rgbToHex, hexToRgb, effectiveColor, HATS } from './character.js';
 import { parsePrompt } from './prompt.js';
 import { Voice } from './voice.js';
 import { Recorder } from './recorder.js';
@@ -72,6 +72,13 @@ export function boot() {
     box.append(h('label', null, 'نام'), nm,
       h('div', { class: 'row' }, h('div', null, h('label', null, 'نقش/ظاهر'), select(Object.entries(PRESETS).map(([k, p]) => [k, p.label]), c.preset, (v) => { c.preset = v; schedule(); })), h('div', null, h('label', null, 'صدا'), select([['male', 'مرد'], ['female', 'زن'], ['child', 'کودک']], c.voice.gender, (v) => { c.voice.gender = v; c.voice.pitch = { male: 118, female: 214, child: 290 }[v]; renderPane(); }))),
       slider('زیروبمی صدا', 70, 400, 2, c.voice.pitch, (v) => { c.voice.pitch = v; schedule(); }, (v) => v + ' Hz'), slider('سرعت گفتار', .6, 1.6, .05, c.voice.rate, (v) => { c.voice.rate = v; schedule(); }, (v) => v.toFixed(2) + '×'),
+      h('label', null, 'شخصی‌سازی ظاهر'),
+      h('div', { class: 'row3' }, [['coat', 'لباس'], ['pants', 'شلوار'], ['skin', 'پوست'], ['hair', 'مو'], ['hat', 'کلاه'], ['scarf', 'شال'], ['shoes', 'کفش']].map(([k, l]) => { const i = h('input', { type: 'color', value: rgbToHex(effectiveColor(c, k)) }); i.addEventListener('input', () => { c.colors = { ...(c.colors || {}), [k]: hexToRgb(i.value) }; schedule(); }); return h('div', { class: 'cc' }, h('span', null, l), i); })),
+      h('div', { class: 'row' }, h('div', null, h('label', null, 'کلاه'), select(HATS, (c.look && c.look.hat) || '', (v) => { c.look = { ...(c.look || {}) }; if (v) c.look.hat = v; else delete c.look.hat; schedule(); })), h('div', null, h('label', null, 'مدل'), select([['', 'پیش‌فرض نقش'], ['dress', 'لباس بلند + مو بلند'], ['plain', 'کت و شلوار + مو کوتاه']], c.look && c.look.dress === 1 ? 'dress' : c.look && c.look.dress === 0 ? 'plain' : '', (v) => { c.look = { ...(c.look || {}) }; if (v === 'dress') { c.look.dress = 1; c.look.longHair = 1; } else if (v === 'plain') { c.look.dress = 0; c.look.longHair = 0; } else { delete c.look.dress; delete c.look.longHair; } schedule(); }))),
+      slider('عرض بدن', .7, 1.5, .05, (c.look && c.look.width) || 1, (v) => { c.look = { ...(c.look || {}), width: v }; schedule(); }, (v) => v.toFixed(2) + '×'),
+      h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => { c.colors = null; c.look = {}; renderPane(); schedule(); } }, '↺ ظاهر نقش'),
+        h('button', { class: 'btn sm', onclick: () => { const r = () => [Math.random(), Math.random(), Math.random()].map((n) => .08 + n * .8); c.colors = { coat: r(), pants: r(), hair: r(), hat: r(), scarf: r(), shoes: [.05, .05, .06] }; renderPane(); schedule(); } }, '🎲 ظاهر تصادفی'),
+        h('button', { class: 'btn sm', onclick: () => { const n = D.addCharacter({ preset: c.preset, name: c.name + ' ۲', colors: c.colors && JSON.parse(JSON.stringify(c.colors)), look: { ...(c.look || {}) }, voice: { ...c.voice }, scale: c.scale, speed: c.speed }); D.snapshotHomes(); toast('کپی ساخته شد'); renderPane(); } }, '⧉ کپی')),
       slider('سرعت راه رفتن', .6, 3, .1, c.speed, (v) => { c.speed = v; schedule(); }, (v) => v.toFixed(1) + ' m/s'), slider('اندازه', .5, 1.6, .05, c.scale, (v) => { c.scale = v; schedule(); }, (v) => v.toFixed(2) + '×'),
       h('label', null, 'گفتن'), h('div', { class: 'row' }, say, h('button', { class: 'btn pri', onclick: doSay }, '🗣 بگو')),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', onclick: () => { D.addEvent({ t: +D.time.toFixed(1), who: c.id, type: 'say', text: say.value.trim() || 'سلام' }); toast('دیالوگ به تایم‌لاین اضافه شد'); } }, '＋ افزودن دیالوگ به تایم‌لاین'), h('button', { class: 'btn', onclick: () => { if (confirm('این شخصیت حذف شود؟')) D.removeCharacter(c.id); } }, '🗑 حذف')),

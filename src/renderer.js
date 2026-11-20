@@ -13,9 +13,9 @@ const PAL = {
 };
 export const TIMES = Object.keys(PAL);
 export const QUALITY = {
-  low: { scale: .55, view: 6, reflect: false, rain: 700, pts: true, fps: 30 },
-  medium: { scale: .8, view: 9, reflect: true, rain: 1800, pts: true, fps: 45 },
-  high: { scale: 1, view: 13, reflect: true, rain: 2400, pts: true, fps: 60 },
+  low: { scale: .7, view: 6, reflect: false, rain: 700, pts: true, fps: 30 },
+  medium: { scale: 1, view: 9, reflect: true, rain: 1800, pts: true, fps: 45 },
+  high: { scale: 1.2, view: 13, reflect: true, rain: 2400, pts: true, fps: 60 },
 };
 
 function sh(gl, type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s) + '\n' + src.split('\n').slice(0, 3).join(' ')); return s; }
@@ -152,7 +152,7 @@ export class Renderer {
     const n = this.ptData; let i = 0; const put = (x, y, z, r, g, b, s, fl) => { if (i + 8 > n.length) return; n.set([x, y, z, r, g, b, s, fl], i); i += 8; };
     const lampK = Math.max(pal.lamp, .12) * (this.env.time === 'day' ? .0 : 1);
     for (const c of this.chunks.values()) { const L = c.d.lights; for (let j = 0; j < c.d.nLights; j++) { const o = j * 8, neon = L[o + 7] === 1; put(L[o], L[o + 1], L[o + 2], L[o + 3] * (neon ? .8 : lampK), L[o + 4] * (neon ? .8 : lampK), L[o + 5] * (neon ? .8 : lampK), L[o + 6], neon ? 1 : 0); } }
-    for (const c of cars) { const f = c.head === 0 ? -1 : 1; put(c.x - .6, .8, c.z + f * 2.4, 1, .95, .75, 11, 0); put(c.x + .6, .8, c.z + f * 2.4, 1, .95, .75, 11, 0); put(c.x - .6, .8, c.z - f * 2.4, .9, .08, .05, 5, 0); put(c.x + .6, .8, c.z - f * 2.4, .9, .08, .05, 5, 0); }
+    for (const c of cars) { const f = c.head === 0 ? -1 : 1; put(c.x - .7, 1.12, c.z + f * 1.95, 1, .93, .7, 13, 0); put(c.x + .7, 1.12, c.z + f * 1.95, 1, .93, .7, 13, 0); put(c.x - .55, 1, c.z - f * 2.3, .95, .07, .04, 5, 0); put(c.x + .55, 1, c.z - f * 2.3, .95, .07, .04, 5, 0); }
     return i / 8;
   }
   _scene(flip, pal, characters, carCount, now, nPts, mirror) {

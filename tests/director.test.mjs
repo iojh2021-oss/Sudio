@@ -13,3 +13,10 @@ assert.equal(e.characters.length, d.characters.length); assert.equal(e.script.le
 assert.throws(() => e.fromJSON({ v: 99 }), /جدیدتر/); assert.throws(() => e.fromJSON(null));
 const f = new Director(); f.fromJSON({ v: 2, characters: [{ preset: 'نامعتبر' }], script: [{ t: 'x' }, { t: 1, type: 'stop' }] }); assert.equal(f.characters.length, 1); assert.equal(f.script.length, 1);
 console.log('director ok');
+{
+  const { Director } = await import('../src/director.js');
+  const d = new Director(); const c = d.addCharacter({ preset: 'woman', colors: { coat: [0, 1, .5], bad: 3 }, look: { hat: 'cap', width: 9 } });
+  const d2 = new Director(); d2.fromJSON(JSON.parse(JSON.stringify(d.toJSON())));
+  const c2 = d2.characters[0]; if (!c2.colors || c2.colors.coat[1] !== 1 || c2.look.hat !== 'cap' || c2.look.width !== 1.5) throw new Error('custom look not preserved');
+  console.log('custom look ok');
+}
