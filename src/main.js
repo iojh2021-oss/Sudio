@@ -122,13 +122,14 @@ export function boot() {
       const low = aiStore && aiStore.free && aiStore.free < ai.dl.expected * 1.15 && !aiCache?.cached;
       box.append(h('div', { class: 'dlcard' }, h('div', { class: 'dl-top' }, E.chip, h('small', null, aiGpu == null ? 'بررسی WebGPU…' : aiGpu.ok ? 'WebGPU ✓' : 'WebGPU ✗')),
         h('div', { class: 'dlbar' + (aiPhase === 'loading' ? ' busy' : '') }, E.fill), E.nums, E.speed, E.note, E.files, E.err,
+        (navigator.deviceMemory && navigator.deviceMemory <= 3 && !aiCache?.cached) ? h('div', { class: 'dl-err' }, '⚠ رم این گوشی کم است (≈' + navigator.deviceMemory + ' گیگابایت)؛ ممکن است برنامه هنگام بارگذاری مدل بسته شود. موتور «سرور» مطمئن‌تر است.') : '',
         low ? h('div', { class: 'dl-err' }, `⚠ فضای خالی مرورگر (${fmtBytes(aiStore.free)}) برای مدل کم است؛ جا باز کن.`) : '',
         aiGpu && !aiGpu.ok ? h('div', { class: 'dl-err' }, '✗ ' + aiGpu.why) : '',
         h('div', { class: 'row', style: 'margin-top:8px' },
           aiPhase === 'downloading' || aiPhase === 'loading' ? h('button', { class: 'btn', onclick: () => { ai.cancel(); aiPhase = 'idle'; aiSnap = null; paintDl(); renderPane(); } }, '⏹ لغو')
             : h('button', { class: 'btn pri', onclick: aiLoad }, aiPhase === 'error' ? '↻ ادامه از همان‌جا' : aiCache?.cached || aiPhase === 'ready' ? '⚡ بارگذاری در حافظه' : aiCache?.partial ? '▶ ادامه دانلود' : '⬇ شروع دانلود'),
           aiCache?.cached || aiCache?.partial || aiPhase === 'ready' ? h('button', { class: 'btn', onclick: async () => { if (!confirm('مدل (و دانلود نیمه‌کاره) از حافظهٔ دستگاه پاک شود؟')) return; ai.cancel(); const n = await clearModelCache(); aiCache = { cached: false }; aiPhase = 'idle'; aiSnap = null; toast(n + ' فایل پاک شد'); renderPane(); } }, '🗑 پاک‌کردن مدل') : ''),
-        h('p', { class: 'note' }, 'بار اول حدود ۲٫۴ گیگابایت (بدون fp16 تا ۴ گیگابایت) است. هر بخش دانلودشده همان لحظه در حافظهٔ خصوصی مرورگر ذخیره می‌شود؛ اگر صفحه بسته شد یا اینترنت قطع شد، دفعهٔ بعد «ادامه دانلود» دقیقاً از همان‌جا ادامه می‌دهد (نه از اول). بهتر است روی Wi-Fi باشی.')));
+        h('p', { class: 'note' }, 'بار اول حدود ۲٫۴ گیگابایت است. هر بخش دانلودشده همان لحظه در حافظهٔ خصوصی مرورگر ذخیره می‌شود؛ اگر صفحه بسته شد یا اینترنت قطع شد، دفعهٔ بعد «ادامه دانلود» دقیقاً از همان‌جا ادامه می‌دهد (نه از اول). بهتر است روی Wi-Fi باشی.')));
       paintDl();
     } else { const u = h('input', { type: 'text', value: ai.url, style: 'direction:ltr' }); u.addEventListener('change', () => { ai.url = u.value.trim(); });
       box.append(h('label', null, 'آدرس سرور'), u, slider('تعداد گام', 1, 50, 1, ai.steps, (v) => { ai.steps = v; }, (v) => v), h('p', { class: 'note' }, 'مرورگر باید اجازهٔ دسترسی (CORS) داشته باشد. برای برنامهٔ محلی روی همین گوشی معمولاً آدرس http://127.0.0.1:پورت است.')); dlEls = { st }; }

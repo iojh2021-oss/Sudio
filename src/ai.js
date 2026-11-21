@@ -38,7 +38,7 @@ export class DownloadTracker {
     return { loaded, total, pct: total ? Math.min(1, loaded / total) : 0, speed: this.speed, eta: this.speed > 1e4 ? (total - loaded) / this.speed : null, files: fs, allDone: fs.length > 0 && fs.every((v) => v.done) };
   }
 }
-const CACHE = 'transformers-cache', MODEL_RE = /Janus-Pro-1B-ONNX/, NEED = ['language_model', 'gen_head', 'image_decode'];
+const CACHE = 'transformers-cache', MODEL_RE = /Janus-Pro-1B-ONNX/, NEED = ['prepare_inputs_embeds_q4', 'language_model', 'lm_head', 'gen_head', 'image_decode'];
 export async function modelCacheInfo() {
   const o = { cached: false, partial: false, saved: 0, total: 0, list: [], resumable: opfsReadOk() };
   try { const sc = await scanStore(); o.list = sc.files; o.saved = sc.saved; o.total = sc.total; if (sc.files.length && NEED.every((n) => sc.files.some((f) => f.file.includes(n) && f.done))) o.cached = true; } catch {}
@@ -58,7 +58,7 @@ export class AIBackdrop {
     w.onmessage = (e) => {
       const m = e.data || {};
       if (m.type === 'note') { this.onProgress && this.onProgress({ phase: 'note', text: m.text }); return; }
-      if (m.type === 'info') { this.dl.expected = m.fp16 ? 2.4e9 : 4e9; return; }
+      if (m.type === 'info') { this.dl.expected = 2.4e9; return; }
       if (m.type === 'progress') { const x = m.x || {}; this.dl.update(x); this.onProgress && this.onProgress({ phase: 'download', snap: this.dl.snap(), p: this.dl.snap().pct }); return; }
       if (m.type === 'gen-progress') { this.onProgress && this.onProgress({ phase: 'gen', p: m.p }); return; }
       const rec = this._wait.get(m.id); if (!rec) return; this._wait.delete(m.id);

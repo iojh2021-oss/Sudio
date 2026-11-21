@@ -1,7 +1,7 @@
 // کارگر وب: مدل متن‌به‌تصویر Janus-Pro-1B (deepseek-ai, مجوز MIT) با Transformers.js روی WebGPU
 // برگرفته از نمونهٔ رسمی huggingface/transformers.js-examples/janus-pro-webgpu
 import { AutoProcessor, MultiModalityCausalLM, BaseStreamer, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
-import { ensureFile, opfsOk, fileKey } from './dl.js';
+import { ensureFile, opfsOk, fileKey, pruneStore } from './dl.js';
 
 const MODEL = 'onnx-community/Janus-Pro-1B-ONNX';
 let fp16 = false, processor = null, model = null, loading = null;
@@ -34,9 +34,14 @@ async function load() {
     await check();
     const progress_callback = (x) => post({ type: 'progress', x });
     processor = await AutoProcessor.from_pretrained(MODEL, { progress_callback });
+    // بدون fp16 دیگر نسخهٔ fp32 (prepare_inputs_embeds ≈ ۲٫۱ گیگابایت در یک بافر) نمی‌گیریم؛ آن فایل روی گوشی حافظه را می‌ترکاند و برنامه بسته می‌شود.
+    const dtype = fp16 ? { prepare_inputs_embeds: 'q4', language_model: 'q4f16', lm_head: 'fp16', gen_head: 'fp16', gen_img_embeds: 'fp16', image_decode: 'fp32' }
+      : { prepare_inputs_embeds: 'q4', language_model: 'q4', lm_head: 'q4', gen_head: 'fp32', gen_img_embeds: 'fp32', image_decode: 'fp32' };
+    const SUF = { fp32: '', fp16: '_fp16', q8: '_quantized', int8: '_int8', uint8: '_uint8', q4: '_q4', q4f16: '_q4f16', bnb4: '_bnb4' };
+    const keep = new Set(Object.entries(dtype).flatMap(([c, t]) => [`onnx/${c}${SUF[t]}.onnx`, `onnx/${c}${SUF[t]}.onnx_data`]));
+    if (opfsOk()) { const n = await pruneStore((f) => keep.has(f)); if (n) post({ type: 'note', text: `${n} فایل سنگین و غیرضروری پاک شد` }); }
     model = await MultiModalityCausalLM.from_pretrained(MODEL, {
-      dtype: fp16 ? { prepare_inputs_embeds: 'q4', language_model: 'q4f16', lm_head: 'fp16', gen_head: 'fp16', gen_img_embeds: 'fp16', image_decode: 'fp32' }
-        : { prepare_inputs_embeds: 'fp32', language_model: 'q4', lm_head: 'fp32', gen_head: 'fp32', gen_img_embeds: 'fp32', image_decode: 'fp32' },
+      dtype,
       device: { prepare_inputs_embeds: 'wasm', language_model: 'webgpu', lm_head: 'webgpu', gen_head: 'webgpu', gen_img_embeds: 'webgpu', image_decode: 'webgpu' },
       progress_callback,
     });

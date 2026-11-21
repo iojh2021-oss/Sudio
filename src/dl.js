@@ -70,3 +70,13 @@ export async function scanStore() {
   return out;
 }
 export async function clearStore() { try { const root = await navigator.storage.getDirectory(); await root.removeEntry(DIR, { recursive: true }); return true; } catch { return false; } }
+// حذف فایل‌های مدل که دیگر لازم نیستند (مثلاً نسخهٔ fp32 سنگین بعد از رفتن به نسخهٔ سبک‌تر) تا حافظه آزاد شود
+export async function pruneStore(keep) {
+  let n = 0;
+  try {
+    const root = await navigator.storage.getDirectory(); let d; try { d = await root.getDirectoryHandle(DIR); } catch { return 0; }
+    const names = []; for await (const [nm] of d.entries()) if (nm.endsWith('.json')) names.push(nm.slice(0, -5));
+    for (const base of names) { const m = await readMeta(d, base); if (!m || !m.url) continue; const f = fileKey(m.url); if (f.startsWith('onnx/') && !keep(f)) { try { await d.removeEntry(base + '.bin'); } catch {} try { await d.removeEntry(base + '.json'); } catch {} n++; } }
+  } catch {}
+  return n;
+}
