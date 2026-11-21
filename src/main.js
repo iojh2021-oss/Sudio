@@ -2,6 +2,7 @@ import { Renderer, QUALITY, TIMES } from './renderer.js';
 import { CameraRig } from './camera.js';
 import { Director } from './director.js';
 import { BIOMES, BIOME_IDS } from './biomes.js';
+import { AIBackdrop, scenePrompt, detectWebGPU } from './ai.js';
 import { walkState } from './world.js';
 import { PRESETS, hitCharacter, walkTo, rgbToHex, hexToRgb, effectiveColor, HATS } from './character.js';
 import { parsePrompt } from './prompt.js';
@@ -61,7 +62,7 @@ export function boot() {
   const $stop = h('button', { class: 'btn', onclick: () => D.stopPlayback() }, '⏹');
   const top = h('div', { class: 'top' }, h('div', { class: 't' }, 'Sudio', h('small', null, 'استودیوی شهر سینمایی')), $play, $stop, $cam, $rec);
   const $tabs = h('div', { class: 'tabs' }), $pane = h('div', { class: 'pane' }), $sheet = h('div', { class: 'sheet' });
-  const TABS = [['prompt', '✍ دستور'], ['chars', '🧍 شخصیت‌ها'], ['scene', '🌧 صحنه'], ['time', '🎞 تایم‌لاین'], ['proj', '💾 پروژه']];
+  const TABS = [['prompt', '✍ دستور'], ['chars', '🧍 شخصیت‌ها'], ['scene', '🌧 صحنه'], ['ai', '🤖 هوش مصنوعی'], ['time', '🎞 تایم‌لاین'], ['proj', '💾 پروژه']];
   const handle = h('div', { class: 'handle', onclick: (e) => { if (e.target === handle || e.target.className === 'grip') $sheet.classList.toggle('closed'); } }, h('span', { class: 'grip' }, '⌃'), $tabs);
   $sheet.append(handle, $pane); document.body.append(top, h('div', { class: 'bar' }, $sheet), $sub, $toast, $hud, $prog);
   const setTab = (t) => { tab = t; $sheet.classList.remove('closed'); renderPane(); };
@@ -71,6 +72,40 @@ export function boot() {
   const select = (opts, val, on) => { const s = h('select', null, opts.map(([v, l]) => h('option', { value: v, ...(v === val ? { selected: '' } : {}) }, l))); s.addEventListener('change', () => on(s.value)); return s; };
   const TIME_L = { night: 'شب', dusk: 'غروب', dawn: 'سپیده‌دم', day: 'روز' };
 
+  // ——— هوش مصنوعی متن‌به‌تصویر برای پس‌زمینه ———
+  const ai = new AIBackdrop(); let aiTxt = '', aiAuto = false, aiLastZ = null, aiStatus = 'آماده', aiThumb = null, aiBlob = null, aiGpu = null, $aiSt = null;
+  const setAiStatus = (t) => { aiStatus = t; if ($aiSt) $aiSt.textContent = t; };
+  async function aiGenerate() {
+    if (ai.busy) { toast('در حال ساخت تصویر…'); return; }
+    const prompt = aiTxt.trim() || scenePrompt(D.env);
+    ai.onProgress = (e) => setAiStatus(e.phase === 'download' ? 'دانلود مدل (فقط بار اول)… ' + Math.round(e.p * 100) + '٪' : 'ساخت تصویر… ' + Math.round(e.p * 100) + '٪');
+    setAiStatus('شروع…');
+    try {
+      const blob = await ai.generate(prompt), bmp = await createImageBitmap(blob); renderer.setBackdrop(bmp);
+      if (aiThumb) URL.revokeObjectURL(aiThumb); aiThumb = URL.createObjectURL(blob); aiBlob = blob; setAiStatus('پس‌زمینه اعمال شد ✓'); toast('پس‌زمینهٔ هوش مصنوعی اعمال شد');
+    } catch (e) { setAiStatus('خطا: ' + e.message); toast('خطا: ' + e.message, 5000); }
+    if (tab === 'ai') renderPane();
+  }
+  function aiTick() { if (!aiAuto || ai.busy || !D.sel) return; if (aiLastZ == null) aiLastZ = D.sel.z; if (Math.abs(D.sel.z - aiLastZ) > 60) { aiLastZ = D.sel.z; aiGenerate(); } }
+  function paneAI() {
+    if (aiGpu == null) detectWebGPU().then((g) => { aiGpu = g; if (tab === 'ai') renderPane(); });
+    const box = h('div');
+    const ta = h('textarea', { placeholder: scenePrompt(D.env), style: 'min-height:70px;direction:ltr' }); ta.value = aiTxt; ta.addEventListener('input', () => { aiTxt = ta.value; });
+    $aiSt = h('div', { class: 'note' }, aiStatus);
+    box.append(h('p', { class: 'note' }, 'مدل هوش مصنوعی واقعی و متن‌باز؛ تصویر ساخته‌شده به‌صورت پس‌زمینهٔ دور (افق) پشت دنیای سه‌بعدی گذاشته می‌شود و با راه رفتن می‌تواند تازه شود.'),
+      h('label', null, 'موتور'), select([['janus', 'داخل مرورگر: Janus-Pro-1B (WebGPU، حدود ۲٫۴ گیگابایت، یک‌بار دانلود)'], ['http', 'برنامه/سرور سازگار با AUTOMATIC1111 (مثلاً Local Dream روی گوشی یا ComfyUI/Forge)']], ai.engine, (v) => { ai.engine = v; renderPane(); }));
+    if (ai.engine === 'janus') box.append(h('p', { class: 'note' }, aiGpu == null ? 'در حال بررسی WebGPU…' : aiGpu.ok ? '✓ WebGPU در دسترس است' + (aiGpu.f16 ? ' (fp16)' : ' (بدون fp16؛ مدل بزرگ‌تر ≈ ۴ گیگابایت)') : '✗ ' + aiGpu.why),
+      h('button', { class: 'btn', onclick: async () => { ai.onProgress = (e) => setAiStatus('دانلود مدل… ' + Math.round(e.p * 100) + '٪'); try { setAiStatus('بارگذاری مدل…'); await ai.load(); setAiStatus('مدل آماده است ✓'); } catch (e) { setAiStatus('خطا: ' + e.message); } } }, '⬇ بارگذاری مدل از پیش'));
+    else { const u = h('input', { type: 'text', value: ai.url, style: 'direction:ltr' }); u.addEventListener('change', () => { ai.url = u.value.trim(); });
+      box.append(h('label', null, 'آدرس سرور'), u, slider('تعداد گام', 1, 50, 1, ai.steps, (v) => { ai.steps = v; }, (v) => v), h('p', { class: 'note' }, 'مرورگر باید اجازهٔ دسترسی (CORS) داشته باشد. برای برنامهٔ محلی روی همین گوشی معمولاً آدرس http://127.0.0.1:پورت است.')); }
+    box.append(h('label', null, 'توصیف تصویر (انگلیسی؛ خالی = از روی صحنه ساخته می‌شود)'), ta,
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: aiGenerate }, '✨ ساخت پس‌زمینه'), h('button', { class: 'btn', onclick: () => { renderer.clearBackdrop(); setAiStatus('پس‌زمینه حذف شد'); } }, '🧹 حذف پس‌زمینه')),
+      $aiSt);
+    const chk = h('input', { type: 'checkbox' }); chk.checked = aiAuto; chk.addEventListener('change', () => { aiAuto = chk.checked; aiLastZ = null; });
+    box.append(h('label', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px' }, chk, 'ساخت خودکار هر ۶۰ متر راه رفتن'));
+    if (aiThumb) box.append(h('img', { src: aiThumb, style: 'width:100%;max-width:260px;border-radius:10px;margin-top:8px' }), h('button', { class: 'btn sm', onclick: () => aiBlob && store.downloadBlob(aiBlob, 'sudio-ai-backdrop.png') }, '💾 ذخیرهٔ تصویر'));
+    return box;
+  }
   function paneChars() {
     const c = D.sel, box = h('div');
     box.append(h('div', { class: 'chips' }, D.characters.map((x) => h('button', { class: 'chip' + (x.id === D.selected ? ' on' : ''), onclick: () => { D.selected = x.id; renderPane(); } }, x.name))));
@@ -132,7 +167,7 @@ export function boot() {
       h('p', { class: 'note' }, rec.supported ? 'ضبط، تصویر و صدای گفتار را با هم می‌گیرد و پس از پایان نمایش ' + (rec.mime.includes('mp4') ? 'MP4' : 'WebM') + ' ذخیره می‌کند.' : 'این مرورگر ضبط ویدیو را پشتیبانی نمی‌کند؛ از «عکس» استفاده کن.'),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', onclick: () => { if (confirm('همهٔ پروژه پاک و صحنهٔ نمونه ساخته شود؟')) { D.prompt = EXAMPLES[0]; D.applyParsed(parsePrompt(D.prompt)); D.snapshotHomes(); } } }, '🆕 پروژهٔ تازه')));
   }
-  function renderPane() { $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.k === tab)); const f = { prompt: panePrompt, chars: paneChars, scene: paneScene, time: paneTime, proj: paneProj }[tab]; const y = $pane.scrollTop; $pane.replaceChildren(f()); $pane.scrollTop = y; }
+  function renderPane() { $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.k === tab)); const f = { prompt: panePrompt, ai: paneAI, chars: paneChars, scene: paneScene, time: paneTime, proj: paneProj }[tab]; const y = $pane.scrollTop; $pane.replaceChildren(f()); $pane.scrollTop = y; }
   async function finishRecording() { const r = await rec.stop(); $rec.classList.remove('rec'); $rec.textContent = '⏺ ضبط'; if (r) { store.downloadBlob(r.blob, 'sudio-video.' + r.ext); toast('ویدیو ذخیره شد (' + (r.blob.size / 1e6).toFixed(1) + ' MB)', 4000); } renderPane(); }
   function toggleRecord() {
     if (rec.recording) { D.pause(); finishRecording(); return; }
@@ -179,7 +214,7 @@ export function boot() {
   function frame(now) {
     const dtr = (now - last) / 1000; last = now; const dt = clamp(dtr, 0, .1); t += dt; ema += ((dtr * 1000) - ema) * .08;
     try {
-      D.step(dt, readInput()); voice.update(); cam.update(dt, D.sel, t);
+      D.step(dt, readInput()); aiTick(); voice.update(); cam.update(dt, D.sel, t);
       renderer.render(frameState());
     } catch (e) { console.error(e); toast('خطای رسم: ' + e.message, 5000); return; }
     if (settings.quality === 'auto') {

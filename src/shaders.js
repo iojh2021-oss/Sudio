@@ -98,13 +98,19 @@ void main(){
 export const SKY_VS = `#version 300 es
 out vec2 v_ndc; void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); v_ndc=p*2.-1.; gl_Position=vec4(v_ndc,1.,1.); }`;
 export const SKY_FS = COMMON + `
-in vec2 v_ndc; uniform mat4 u_invVP; uniform float u_cloud, u_stars; out vec4 o;
+in vec2 v_ndc; uniform mat4 u_invVP; uniform float u_cloud, u_stars, u_aiOn, u_aiMix, u_aiYaw; uniform sampler2D u_ai0, u_ai1; out vec4 o;
 void main(){
   vec4 a=u_invVP*vec4(v_ndc,1.,1.); vec3 d=normalize(a.xyz/a.w-u_cam); float h=d.y;
   vec3 c=mix(u_hor,u_zen,pow(clamp(h,0.,1.),.5));
   float g=pow(max(dot(d,vec3(0.,0.,-1.)),0.),5.); c+=u_glow*g*exp(-abs(h)*3.2)*.9;
   c+=u_glow*.25*exp(-abs(h)*9.);
   if(h>0.){ vec2 q=d.xz/(h+.22)*1.3+vec2(u_time*.012,0.); float cl=smoothstep(.35,.85,fbm(q)); c=mix(c,c*1.45+u_hor*.35,cl*u_cloud); float s=step(.9972,h21(floor(d.xz/(h+.1)*220.)))*u_stars*(1.-cl); c+=vec3(s)*.8; }
+  if(u_aiOn>.5){
+    float az=atan(d.x,-d.z)/1.22+.5+u_aiYaw; float u=1.-abs(1.-2.*fract(az*.5)); float v=.42+1.29*h;
+    if(v>0.&&v<1.){ vec2 uv=vec2(u,1.-v); vec3 t=mix(texture(u_ai0,uv).rgb,texture(u_ai1,uv).rgb,u_aiMix);
+      float lum=clamp(dot(u_amb,vec3(.333))*1.9,.22,1.05); float a=smoothstep(0.,.07,v)*smoothstep(1.,.9,v);
+      c=mix(c,t*lum,a*.95); }
+  }
   c=mix(c,fogColor(d),smoothstep(.35,0.,h)*.8);
   o=vec4(grade(c),1.);
 }`;

@@ -77,6 +77,15 @@ export class Renderer {
     if (!this.rainVAO) this.rainVAO = gl.createVertexArray(); gl.bindVertexArray(this.rainVAO); gl.bindBuffer(gl.ARRAY_BUFFER, this.rainBuf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0); gl.bindVertexArray(null); this.rainN = n;
   }
   setQuality(name) { const q = QUALITY[name]; if (!q) return; this.qName = name; this.q = { ...q }; this.scale = q.scale; this._rainBuild(q.rain); this.resize(); }
+  setBackdrop(src) {                                  // تصویر هوش مصنوعی (ImageBitmap/Canvas/Image) به‌عنوان پس‌زمینهٔ دور؛ با محو‌شدن جایگزین می‌شود
+    const gl = this.gl; if (!this.ai) { this.ai = { tex: [gl.createTexture(), gl.createTexture()], on: 0, t0: -9, yaw: 0 }; }
+    const a = this.ai; a.tex.reverse();
+    gl.bindTexture(gl.TEXTURE_2D, a.tex[1]); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (!a.on) { gl.bindTexture(gl.TEXTURE_2D, a.tex[0]); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); }
+    a.on = 1; a.t0 = this.t;
+  }
+  clearBackdrop() { if (this.ai) this.ai.on = 0; }
   setSeed(seed, district) { if (seed !== this.seed || district !== this.district) { this.seed = seed >>> 0; this.district = district || 'auto'; this.clearChunks(); } }
   setEnv(e) { const ob = this.env.biome; Object.assign(this.env, e); if ((this.env.biome || 'city') !== (ob || 'city')) this.clearChunks(); this.litMul = this.env.litMul ?? 1; }
   clearChunks() { const gl = this.gl; for (const c of this.chunks.values()) { gl.deleteBuffer(c.buf); gl.deleteVertexArray(c.vao); } this.chunks.clear(); }
@@ -126,6 +135,7 @@ export class Renderer {
     // آسمان
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     let P = this.P.sky; gl.useProgram(P.p); this._common(P, pal); gl.uniformMatrix4fv(P.u.u_invVP, false, this.invVP); gl.uniform1f(P.u.u_cloud, pal.cloud); gl.uniform1f(P.u.u_stars, pal.stars);
+    { const a = this.ai, on = a && a.on ? 1 : 0; gl.uniform1f(P.u.u_aiOn, on); if (on) { gl.uniform1f(P.u.u_aiMix, clamp((t - a.t0) / 3, 0, 1)); gl.uniform1f(P.u.u_aiYaw, 0); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a.tex[0]); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, a.tex[1]); gl.uniform1i(P.u.u_ai0, 0); gl.uniform1i(P.u.u_ai1, 1); gl.activeTexture(gl.TEXTURE0); } }
     gl.bindVertexArray(this.emptyVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     // ماشین‌های متحرک + چراغ‌ها
