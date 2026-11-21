@@ -9,7 +9,7 @@ const post = (m) => self.postMessage(m);
 async function check() {
   if (!self.navigator.gpu) throw new Error('WebGPU در این مرورگر فعال نیست');
   const ad = await self.navigator.gpu.requestAdapter(); if (!ad) throw new Error('کارت گرافیک سازگار با WebGPU پیدا نشد');
-  fp16 = ad.features.has('shader-f16');
+  fp16 = ad.features.has('shader-f16'); post({ type: 'info', fp16 });
 }
 async function load() {
   if (model) return;

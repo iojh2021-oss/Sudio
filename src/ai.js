@@ -16,14 +16,45 @@ export async function detectWebGPU() {
   try { if (!navigator.gpu) return { ok: false, why: 'این مرورگر WebGPU ندارد (Chrome/Edge ۱۱۳+ روی اندروید ۱۲+ لازم است)' }; const a = await navigator.gpu.requestAdapter(); if (!a) return { ok: false, why: 'کارت گرافیک سازگار با WebGPU پیدا نشد' }; return { ok: true, f16: a.features.has('shader-f16') }; } catch (e) { return { ok: false, why: String(e.message || e) }; }
 }
 
+export const fmtBytes = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + ' MB' : Math.round(n / 1e3) + ' KB';
+export const fmtEta = (s) => s == null || !isFinite(s) ? '—' : s < 60 ? Math.ceil(s) + ' ثانیه' : s < 3600 ? Math.ceil(s / 60) + ' دقیقه' : (s / 3600).toFixed(1) + ' ساعت';
+
+// جمع‌کنندهٔ پیشرفت دانلود چندفایلی (درصد کل، سرعت، زمان باقی‌مانده، وضعیت هر فایل)
+export class DownloadTracker {
+  constructor(expected = 2.4e9) { this.expected = expected; this.reset(); }
+  reset() { this.files = new Map(); this.samples = []; this.speed = 0; this.t0 = 0; }
+  update(x, now = performance.now()) {
+    if (!x || !x.file) return; const f = this.files.get(x.file) || { name: x.file, loaded: 0, total: 0, done: false }; if (!this.t0) this.t0 = now;
+    if (x.status === 'progress' || x.status === 'download') { f.loaded = x.loaded || f.loaded; f.total = x.total || f.total; } else if (x.status === 'done') { f.total = f.total || f.loaded; f.loaded = f.total; f.done = true; }
+    this.files.set(x.file, f);
+    const sum = [...this.files.values()].reduce((a, v) => a + v.loaded, 0); this.samples.push([now, sum]); while (this.samples.length > 2 && now - this.samples[0][0] > 6000) this.samples.shift();
+    const a = this.samples[0], dt = (now - a[0]) / 1000; if (dt > .4) this.speed = Math.max(0, (sum - a[1]) / dt);
+  }
+  snap() {
+    const fs = [...this.files.values()], loaded = fs.reduce((a, v) => a + v.loaded, 0), seen = fs.reduce((a, v) => a + Math.max(v.total, v.loaded), 0), total = Math.max(this.expected, seen);
+    fs.sort((a, b) => (a.done - b.done) || (b.total - a.total));
+    return { loaded, total, pct: total ? Math.min(1, loaded / total) : 0, speed: this.speed, eta: this.speed > 1e4 ? (total - loaded) / this.speed : null, files: fs, allDone: fs.length > 0 && fs.every((v) => v.done) };
+  }
+}
+const CACHE = 'transformers-cache', MODEL_RE = /Janus-Pro-1B-ONNX/;
+export async function modelCacheInfo() {
+  try { if (!self.caches) return { cached: false }; const c = await caches.open(CACHE), ks = (await c.keys()).filter((r) => MODEL_RE.test(r.url));
+    return { cached: ['language_model', 'gen_head', 'image_decode'].every((n) => ks.some((r) => r.url.includes(n))), files: ks.length }; } catch { return { cached: false }; }
+}
+export async function clearModelCache() { try { const c = await caches.open(CACHE); let n = 0; for (const r of await c.keys()) if (MODEL_RE.test(r.url)) { await c.delete(r); n++; } return n; } catch { return 0; } }
+export async function storageInfo() {
+  try { const e = await navigator.storage.estimate(); const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false; return { free: (e.quota || 0) - (e.usage || 0), quota: e.quota || 0, persisted }; } catch { return null; }
+}
+
 export class AIBackdrop {
-  constructor() { this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
+  constructor() { this.dl = new DownloadTracker(); this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
   _w() {
     if (this.worker) return this.worker;
     const w = this.worker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
     w.onmessage = (e) => {
       const m = e.data || {};
-      if (m.type === 'progress') { const x = m.x || {}; if (x.status === 'progress' && this.onProgress) this.onProgress({ phase: 'download', p: (x.progress || 0) / 100, file: x.file }); return; }
+      if (m.type === 'info') { this.dl.expected = m.fp16 ? 2.4e9 : 4e9; return; }
+      if (m.type === 'progress') { const x = m.x || {}; this.dl.update(x); this.onProgress && this.onProgress({ phase: 'download', snap: this.dl.snap(), p: this.dl.snap().pct }); return; }
       if (m.type === 'gen-progress') { this.onProgress && this.onProgress({ phase: 'gen', p: m.p }); return; }
       const rec = this._wait.get(m.id); if (!rec) return; this._wait.delete(m.id);
       if (m.type === 'error') rec.rej(new Error(m.message)); else rec.res(m);
@@ -32,7 +63,13 @@ export class AIBackdrop {
     return w;
   }
   _call(msg) { return new Promise((res, rej) => { const id = ++this._id; this._wait.set(id, { res, rej }); this._w().postMessage({ ...msg, id }); }); }
-  async load() { if (this.engine !== 'janus' || this.ready) return; await this._call({ type: 'load' }); this.ready = true; }
+  async load() {
+    if (this.engine !== 'janus' || this.ready) return;
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch {}
+    let lock = null; try { lock = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null; } catch {}
+    try { await this._call({ type: 'load' }); this.ready = true; } finally { try { lock && lock.release(); } catch {} }
+  }
+  cancel() { if (this.worker) { this.worker.terminate(); this.worker = null; } for (const r of this._wait.values()) r.rej(new Error('لغو شد')); this._wait.clear(); this.ready = false; this.busy = false; this.dl.reset(); }
   async generate(prompt) {
     if (this.busy) throw new Error('هنوز تصویر قبلی در حال ساخت است');
     this.busy = true;

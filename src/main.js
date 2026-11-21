@@ -2,7 +2,7 @@ import { Renderer, QUALITY, TIMES } from './renderer.js';
 import { CameraRig } from './camera.js';
 import { Director } from './director.js';
 import { BIOMES, BIOME_IDS } from './biomes.js';
-import { AIBackdrop, scenePrompt, detectWebGPU } from './ai.js';
+import { AIBackdrop, scenePrompt, detectWebGPU, modelCacheInfo, clearModelCache, storageInfo, fmtBytes, fmtEta } from './ai.js';
 import { walkState } from './world.js';
 import { PRESETS, hitCharacter, walkTo, rgbToHex, hexToRgb, effectiveColor, HATS } from './character.js';
 import { parsePrompt } from './prompt.js';
@@ -73,34 +73,67 @@ export function boot() {
   const TIME_L = { night: 'شب', dusk: 'غروب', dawn: 'سپیده‌دم', day: 'روز' };
 
   // ——— هوش مصنوعی متن‌به‌تصویر برای پس‌زمینه ———
-  const ai = new AIBackdrop(); let aiTxt = '', aiAuto = false, aiLastZ = null, aiStatus = 'آماده', aiThumb = null, aiBlob = null, aiGpu = null, $aiSt = null;
-  const setAiStatus = (t) => { aiStatus = t; if ($aiSt) $aiSt.textContent = t; };
+  const ai = new AIBackdrop(); let aiTxt = '', aiAuto = false, aiLastZ = null, aiStatus = 'آماده', aiThumb = null, aiBlob = null, aiGpu = null, aiPhase = 'idle', aiCache = null, aiStore = null, aiSnap = null, aiErr = '', dlEls = null;
+  const $pill = h('button', { class: 'dlpill', style: 'display:none', onclick: () => setTab('ai') });
+  document.body.append($pill);
+  const ltr = (x) => '\u2066' + x + '\u2069';
+  const setAiStatus = (t) => { aiStatus = t; if (dlEls && dlEls.st) dlEls.st.textContent = t; };
+  function paintDl() {
+    const sn = aiSnap || ai.dl.snap(), pct = Math.round(sn.pct * 100);
+    if ($pill) { const on = (aiPhase === 'downloading' || aiPhase === 'loading') && tab !== 'ai'; $pill.style.display = on ? '' : 'none'; $pill.textContent = aiPhase === 'loading' ? '⚙ آماده‌سازی مدل…' : '⬇ دانلود مدل هوش مصنوعی ' + ltr(pct + '٪'); }
+    if (!dlEls || !dlEls.fill) return; const E = dlEls;
+    E.fill.style.width = (aiPhase === 'ready' || aiCache?.cached && aiPhase === 'idle' ? 100 : pct) + '%';
+    E.chip.textContent = { idle: aiCache?.cached ? '✓ روی دستگاه ذخیره است' : '⬜ هنوز دانلود نشده', downloading: '⬇ در حال دانلود', loading: '⚙ آماده‌سازی روی کارت گرافیک…', ready: '✓ مدل آماده است', error: '⚠ خطا' }[aiPhase];
+    E.chip.className = 'chip2 ' + aiPhase;
+    E.nums.textContent = aiPhase === 'downloading' || aiPhase === 'loading' ? `${ltr(fmtBytes(sn.loaded))} از ${ltr(fmtBytes(sn.total))} · ${ltr(pct + '٪')}` : aiCache?.cached || aiPhase === 'ready' ? 'مدل کامل در حافظهٔ مرورگر است؛ دفعهٔ بعد دانلود نمی‌شود' : `حجم تقریبی: ${ltr(fmtBytes(ai.dl.expected))}`;
+    E.speed.textContent = aiPhase === 'downloading' ? `سرعت ${ltr(sn.speed ? fmtBytes(sn.speed) + '/s' : '…')} · باقی‌مانده ${fmtEta(sn.eta)}` : '';
+    E.files.replaceChildren(...sn.files.slice(0, 6).map((f) => { const p = f.total ? Math.round(f.loaded / f.total * 100) : 0; return h('div', { class: 'frow' }, h('span', null, f.name.split('/').pop()), h('i', null, h('b', { style: `width:${f.done ? 100 : p}%` })), h('em', null, f.done ? '✓' : p + '٪')); }));
+    E.err.textContent = aiErr;
+  }
+  function aiProgress(e) { if (e.phase === 'download') { aiSnap = e.snap; aiPhase = e.snap.allDone || e.snap.pct > .995 ? 'loading' : 'downloading'; paintDl(); } else setAiStatus('ساخت تصویر… ' + Math.round(e.p * 100) + '٪'); }
+  async function aiLoad() {
+    if (ai.ready || aiPhase === 'downloading' || aiPhase === 'loading') return; aiErr = ''; aiPhase = 'downloading'; ai.dl.reset(); aiSnap = null; ai.onProgress = aiProgress; paintDl();
+    try { await ai.load(); aiPhase = 'ready'; aiCache = await modelCacheInfo(); aiStore = await storageInfo(); setAiStatus('مدل آماده است ✓'); toast('مدل هوش مصنوعی آماده شد'); }
+    catch (e) { aiPhase = 'error'; aiErr = e.message === 'لغو شد' ? '' : 'خطا: ' + e.message + ' — «تلاش دوباره» فایل‌های کامل‌شده را دوباره دانلود نمی‌کند.'; if (e.message === 'لغو شد') aiPhase = 'idle'; }
+    paintDl(); if (tab === 'ai') renderPane();
+  }
   async function aiGenerate() {
     if (ai.busy) { toast('در حال ساخت تصویر…'); return; }
-    const prompt = aiTxt.trim() || scenePrompt(D.env);
-    ai.onProgress = (e) => setAiStatus(e.phase === 'download' ? 'دانلود مدل (فقط بار اول)… ' + Math.round(e.p * 100) + '٪' : 'ساخت تصویر… ' + Math.round(e.p * 100) + '٪');
-    setAiStatus('شروع…');
+    const prompt = aiTxt.trim() || scenePrompt(D.env); ai.onProgress = aiProgress;
+    if (ai.engine === 'janus' && !ai.ready) { await aiLoad(); if (!ai.ready) return; }
+    setAiStatus('شروع ساخت تصویر…');
     try {
       const blob = await ai.generate(prompt), bmp = await createImageBitmap(blob); renderer.setBackdrop(bmp);
       if (aiThumb) URL.revokeObjectURL(aiThumb); aiThumb = URL.createObjectURL(blob); aiBlob = blob; setAiStatus('پس‌زمینه اعمال شد ✓'); toast('پس‌زمینهٔ هوش مصنوعی اعمال شد');
     } catch (e) { setAiStatus('خطا: ' + e.message); toast('خطا: ' + e.message, 5000); }
     if (tab === 'ai') renderPane();
   }
-  function aiTick() { if (!aiAuto || ai.busy || !D.sel) return; if (aiLastZ == null) aiLastZ = D.sel.z; if (Math.abs(D.sel.z - aiLastZ) > 60) { aiLastZ = D.sel.z; aiGenerate(); } }
+  function aiTick() { if (!aiAuto || ai.busy || !D.sel || !(ai.engine !== 'janus' || ai.ready)) return; if (aiLastZ == null) aiLastZ = D.sel.z; if (Math.abs(D.sel.z - aiLastZ) > 60) { aiLastZ = D.sel.z; aiGenerate(); } }
   function paneAI() {
     if (aiGpu == null) detectWebGPU().then((g) => { aiGpu = g; if (tab === 'ai') renderPane(); });
-    const box = h('div');
+    if (aiCache == null) { aiCache = { cached: false }; modelCacheInfo().then((c) => { aiCache = c; storageInfo().then((x) => { aiStore = x; paintDl(); }); paintDl(); }); }
+    const box = h('div'); dlEls = null;
     const ta = h('textarea', { placeholder: scenePrompt(D.env), style: 'min-height:70px;direction:ltr' }); ta.value = aiTxt; ta.addEventListener('input', () => { aiTxt = ta.value; });
-    $aiSt = h('div', { class: 'note' }, aiStatus);
+    const st = h('div', { class: 'note' }, aiStatus);
     box.append(h('p', { class: 'note' }, 'مدل هوش مصنوعی واقعی و متن‌باز؛ تصویر ساخته‌شده به‌صورت پس‌زمینهٔ دور (افق) پشت دنیای سه‌بعدی گذاشته می‌شود و با راه رفتن می‌تواند تازه شود.'),
-      h('label', null, 'موتور'), select([['janus', 'داخل مرورگر: Janus-Pro-1B (WebGPU، حدود ۲٫۴ گیگابایت، یک‌بار دانلود)'], ['http', 'برنامه/سرور سازگار با AUTOMATIC1111 (مثلاً Local Dream روی گوشی یا ComfyUI/Forge)']], ai.engine, (v) => { ai.engine = v; renderPane(); }));
-    if (ai.engine === 'janus') box.append(h('p', { class: 'note' }, aiGpu == null ? 'در حال بررسی WebGPU…' : aiGpu.ok ? '✓ WebGPU در دسترس است' + (aiGpu.f16 ? ' (fp16)' : ' (بدون fp16؛ مدل بزرگ‌تر ≈ ۴ گیگابایت)') : '✗ ' + aiGpu.why),
-      h('button', { class: 'btn', onclick: async () => { ai.onProgress = (e) => setAiStatus('دانلود مدل… ' + Math.round(e.p * 100) + '٪'); try { setAiStatus('بارگذاری مدل…'); await ai.load(); setAiStatus('مدل آماده است ✓'); } catch (e) { setAiStatus('خطا: ' + e.message); } } }, '⬇ بارگذاری مدل از پیش'));
-    else { const u = h('input', { type: 'text', value: ai.url, style: 'direction:ltr' }); u.addEventListener('change', () => { ai.url = u.value.trim(); });
-      box.append(h('label', null, 'آدرس سرور'), u, slider('تعداد گام', 1, 50, 1, ai.steps, (v) => { ai.steps = v; }, (v) => v), h('p', { class: 'note' }, 'مرورگر باید اجازهٔ دسترسی (CORS) داشته باشد. برای برنامهٔ محلی روی همین گوشی معمولاً آدرس http://127.0.0.1:پورت است.')); }
+      h('label', null, 'موتور'), select([['janus', 'داخل مرورگر: Janus-Pro-1B (WebGPU)'], ['http', 'برنامه/سرور سازگار با AUTOMATIC1111 (مثلاً Local Dream یا ComfyUI)']], ai.engine, (v) => { ai.engine = v; renderPane(); }));
+    if (ai.engine === 'janus') {
+      const E = dlEls = { chip: h('span', { class: 'chip2' }), fill: h('b'), nums: h('div', { class: 'dl-n' }), speed: h('div', { class: 'dl-n' }), files: h('div', { class: 'files' }), err: h('div', { class: 'dl-err' }), st };
+      const low = aiStore && aiStore.free && aiStore.free < ai.dl.expected * 1.15 && !aiCache?.cached;
+      box.append(h('div', { class: 'dlcard' }, h('div', { class: 'dl-top' }, E.chip, h('small', null, aiGpu == null ? 'بررسی WebGPU…' : aiGpu.ok ? 'WebGPU ✓' : 'WebGPU ✗')),
+        h('div', { class: 'dlbar' + (aiPhase === 'loading' ? ' busy' : '') }, E.fill), E.nums, E.speed, E.files, E.err,
+        low ? h('div', { class: 'dl-err' }, `⚠ فضای خالی مرورگر (${fmtBytes(aiStore.free)}) برای مدل کم است؛ جا باز کن.`) : '',
+        aiGpu && !aiGpu.ok ? h('div', { class: 'dl-err' }, '✗ ' + aiGpu.why) : '',
+        h('div', { class: 'row', style: 'margin-top:8px' },
+          aiPhase === 'downloading' || aiPhase === 'loading' ? h('button', { class: 'btn', onclick: () => { ai.cancel(); aiPhase = 'idle'; aiSnap = null; paintDl(); renderPane(); } }, '⏹ لغو')
+            : h('button', { class: 'btn pri', onclick: aiLoad }, aiPhase === 'error' ? '↻ تلاش دوباره' : aiCache?.cached || aiPhase === 'ready' ? '⚡ بارگذاری در حافظه' : '⬇ شروع دانلود'),
+          aiCache?.cached || aiPhase === 'ready' ? h('button', { class: 'btn', onclick: async () => { if (!confirm('مدل از حافظهٔ دستگاه پاک شود؟ (بار بعد دوباره دانلود می‌شود)')) return; ai.cancel(); const n = await clearModelCache(); aiCache = { cached: false }; aiPhase = 'idle'; aiSnap = null; toast(n + ' فایل پاک شد'); renderPane(); } }, '🗑 پاک‌کردن مدل') : ''),
+        h('p', { class: 'note' }, 'بار اول حدود ۲٫۴ گیگابایت (بدون fp16 تا ۴ گیگابایت) دانلود می‌شود؛ بهتر است روی Wi-Fi باشی و صفحه را ببندی نکنی. صفحه روشن می‌ماند و فایل‌های کامل‌شده کش می‌شوند؛ اگر قطع شد «تلاش دوباره» از ادامه شروع می‌کند.')));
+      paintDl();
+    } else { const u = h('input', { type: 'text', value: ai.url, style: 'direction:ltr' }); u.addEventListener('change', () => { ai.url = u.value.trim(); });
+      box.append(h('label', null, 'آدرس سرور'), u, slider('تعداد گام', 1, 50, 1, ai.steps, (v) => { ai.steps = v; }, (v) => v), h('p', { class: 'note' }, 'مرورگر باید اجازهٔ دسترسی (CORS) داشته باشد. برای برنامهٔ محلی روی همین گوشی معمولاً آدرس http://127.0.0.1:پورت است.')); dlEls = { st }; }
     box.append(h('label', null, 'توصیف تصویر (انگلیسی؛ خالی = از روی صحنه ساخته می‌شود)'), ta,
-      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: aiGenerate }, '✨ ساخت پس‌زمینه'), h('button', { class: 'btn', onclick: () => { renderer.clearBackdrop(); setAiStatus('پس‌زمینه حذف شد'); } }, '🧹 حذف پس‌زمینه')),
-      $aiSt);
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: aiGenerate }, '✨ ساخت پس‌زمینه'), h('button', { class: 'btn', onclick: () => { renderer.clearBackdrop(); setAiStatus('پس‌زمینه حذف شد'); } }, '🧹 حذف پس‌زمینه')), st);
     const chk = h('input', { type: 'checkbox' }); chk.checked = aiAuto; chk.addEventListener('change', () => { aiAuto = chk.checked; aiLastZ = null; });
     box.append(h('label', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px' }, chk, 'ساخت خودکار هر ۶۰ متر راه رفتن'));
     if (aiThumb) box.append(h('img', { src: aiThumb, style: 'width:100%;max-width:260px;border-radius:10px;margin-top:8px' }), h('button', { class: 'btn sm', onclick: () => aiBlob && store.downloadBlob(aiBlob, 'sudio-ai-backdrop.png') }, '💾 ذخیرهٔ تصویر'));
@@ -167,7 +200,7 @@ export function boot() {
       h('p', { class: 'note' }, rec.supported ? 'ضبط، تصویر و صدای گفتار را با هم می‌گیرد و پس از پایان نمایش ' + (rec.mime.includes('mp4') ? 'MP4' : 'WebM') + ' ذخیره می‌کند.' : 'این مرورگر ضبط ویدیو را پشتیبانی نمی‌کند؛ از «عکس» استفاده کن.'),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', onclick: () => { if (confirm('همهٔ پروژه پاک و صحنهٔ نمونه ساخته شود؟')) { D.prompt = EXAMPLES[0]; D.applyParsed(parsePrompt(D.prompt)); D.snapshotHomes(); } } }, '🆕 پروژهٔ تازه')));
   }
-  function renderPane() { $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.k === tab)); const f = { prompt: panePrompt, ai: paneAI, chars: paneChars, scene: paneScene, time: paneTime, proj: paneProj }[tab]; const y = $pane.scrollTop; $pane.replaceChildren(f()); $pane.scrollTop = y; }
+  function renderPane() { $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.k === tab)); const f = { prompt: panePrompt, ai: paneAI, chars: paneChars, scene: paneScene, time: paneTime, proj: paneProj }[tab]; const y = $pane.scrollTop; $pane.replaceChildren(f()); $pane.scrollTop = y; paintDl(); }
   async function finishRecording() { const r = await rec.stop(); $rec.classList.remove('rec'); $rec.textContent = '⏺ ضبط'; if (r) { store.downloadBlob(r.blob, 'sudio-video.' + r.ext); toast('ویدیو ذخیره شد (' + (r.blob.size / 1e6).toFixed(1) + ' MB)', 4000); } renderPane(); }
   function toggleRecord() {
     if (rec.recording) { D.pause(); finishRecording(); return; }
@@ -235,5 +268,5 @@ export function boot() {
   const splash = h('div', { class: 'splash' }, h('h1', null, 'Sudio'), h('p', null, 'شهر سه‌بعدی بی‌پایان با مه و باران، شخصیت‌هایی که راه می‌روند و حرف می‌زنند. همه‌چیز آفلاین و روی گوشی ساخته می‌شود.'), h('button', { class: 'btn pri', onclick: () => { voice.init(); splash.remove(); $sheet.classList.add('closed'); D.snapshotHomes(); D.play(); } }, '▶ شروع نمایش'), h('button', { class: 'btn', onclick: () => splash.remove() }, 'ویرایش صحنه'));
   document.body.append(splash);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('./sw.js').catch(() => {});
-  window.Sudio = { D, renderer, cam, voice, rec, toast, tap, setTab };
+  window.Sudio = { D, renderer, cam, voice, rec, toast, tap, setTab, aiFeed: (x) => { aiPhase = 'downloading'; ai.dl.update(x); aiSnap = ai.dl.snap(); paintDl(); } };
 }
