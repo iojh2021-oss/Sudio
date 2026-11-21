@@ -13,3 +13,8 @@ const m1 = movingCars(5, 3.3, -300, 20), m2 = movingCars(5, 3.3, -300, 20); asse
 const w = clampWalk(50, -10); assert.ok(Math.abs(w.x) <= 10.5, 'مرز پیاده‌رو');
 assert.equal(districtOf(1, 0, 'quiet').id, 'quiet');
 console.log('world ok — chunk avg', per.toFixed(2), 'ms; boxes', a.count);
+{
+  const { makeAnyChunk, BIOME_IDS } = await import('../src/biomes.js');
+  for (const b of BIOME_IDS) { const c = makeAnyChunk(777, 5, { biome: b }), d = makeAnyChunk(777, 5, { biome: b }); if (!c.count || c.boxes.length !== d.boxes.length || c.boxes.some((v, i) => v !== d.boxes[i])) throw new Error('biome chunk ' + b); if (c.boxes.some((v) => !isFinite(v))) throw new Error('NaN ' + b); }
+  console.log('biome chunks ok');
+}

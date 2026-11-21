@@ -1,6 +1,8 @@
 import { Renderer, QUALITY, TIMES } from './renderer.js';
 import { CameraRig } from './camera.js';
 import { Director } from './director.js';
+import { BIOMES, BIOME_IDS } from './biomes.js';
+import { walkState } from './world.js';
 import { PRESETS, hitCharacter, walkTo, rgbToHex, hexToRgb, effectiveColor, HATS } from './character.js';
 import { parsePrompt } from './prompt.js';
 import { Voice } from './voice.js';
@@ -15,6 +17,10 @@ const EXAMPLES = [
   'شب است و باران می‌بارد. یک مرد در خیابان مه‌آلود مرکز شهر راه می‌رود. مرد می‌گوید: «این شهر هیچ‌وقت نمی‌خوابد.» زن می‌گوید: «ولی همه‌چیز را می‌بیند.»',
   'غروب، یک بانو و یک کودک در محلهٔ قدیمی راه می‌روند. بانو می‌گوید: «زود برسیم خانه.» کودک می‌گوید: «باران می‌آید؟» دوربین هوایی، ۳۰ ثانیه',
   'A detective walks through the foggy industrial district at night. He says "Somebody left the lights on." camera street',
+  'روز است. یک مرد در جنگل انبوه و مه‌آلود راه می‌رود. مرد می‌گوید: «این درخت‌ها از من بزرگ‌ترند.» دوربین دنبال‌کننده',
+  'غروب در ساحل. یک بانو و یک کودک کنار دریا قدم می‌زنند. کودک می‌گوید: «موج‌ها را ببین!»',
+  'A man walks across the desert at sunset. He says "Water. I need water."',
+  'سپیده‌دم در کوهستان برفی؛ یک کارگر راه می‌رود و می‌گوید: «هوا سرد است.»',
 ];
 const h = (tag, props, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(props || {})) { if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (k === 'value') e.value = v; else e.setAttribute(k, v); } for (const c of kids.flat()) if (c != null) e.append(c.nodeType ? c : document.createTextNode(c)); return e; };
 
@@ -34,7 +40,11 @@ export function boot() {
     onChange: () => { applyEnv(); cam.mode = D.cameraMode; schedule(); }, onEnv: () => applyEnv(), onCamera: (m) => { cam.mode = m; },
     onPlay: (p) => { $play.textContent = p ? '⏸' : '▶'; if (p) voice.init(); else voice.stopAll(); }, onEnd: () => { if (rec.recording) finishRecording(); else toast('پایان نمایش'); },
   });
-  function applyEnv() { renderer.setSeed(D.seed, D.env.district); renderer.setEnv({ time: D.env.time, rain: D.env.rain, fog: D.env.fog, mood: D.env.mood, traffic: D.env.traffic }); }
+  function applyEnv() {
+    const B = BIOMES[D.env.biome] || BIOMES.city; walkState.half = B.walk; walkState.city = B.id === 'city';
+    for (const c of D.characters) { c.x = Math.max(-B.walk + .4, Math.min(B.walk - .4, c.x)); c.path.forEach((p) => { p.x = Math.max(-B.walk + .4, Math.min(B.walk - .4, p.x)); }); }
+    renderer.setSeed(D.seed, D.env.district); renderer.setEnv({ time: D.env.time, rain: D.env.rain, fog: D.env.fog, mood: D.env.mood, traffic: D.env.traffic, biome: D.env.biome || 'city' });
+  }
   function schedule() { clearTimeout(pending); pending = setTimeout(() => { renderPane(); store.autosave(D.toJSON()); }, 120); }
 
   // ---------- پروژهٔ اولیه ----------
@@ -94,6 +104,7 @@ export function boot() {
   }
   function paneScene() {
     return h('div', null,
+      h('label', null, 'محیط (پس‌زمینهٔ ساخته‌شده هنگام راه رفتن)'), select(BIOME_IDS.map((k) => [k, BIOMES[k].label]), D.env.biome || 'city', (v) => { D.env.biome = v; if (v !== 'city') { D.env.traffic = 0; if (D.env.time === 'night' && D.env.rain > .3) { D.env.rain = 0; } } else D.env.traffic = 1; applyEnv(); schedule(); renderPane(); }),
       h('div', { class: 'row' }, h('div', null, h('label', null, 'زمان'), select(TIMES.map((k) => [k, TIME_L[k]]), D.env.time, (v) => { D.env.time = v; applyEnv(); schedule(); })), h('div', null, h('label', null, 'سبک رنگ'), select([['noir', 'نوآر'], ['red', 'نوآر + قرمز'], ['color', 'رنگی']], D.env.mood, (v) => { D.env.mood = v; applyEnv(); schedule(); }))),
       slider('باران', 0, 1, .05, D.env.rain, (v) => { D.env.rain = v; applyEnv(); schedule(); }, (v) => Math.round(v * 100) + '٪'), slider('مه', 0, 1, .05, D.env.fog, (v) => { D.env.fog = v; applyEnv(); schedule(); }, (v) => Math.round(v * 100) + '٪'),
       slider('ترافیک', 0, 2, .1, D.env.traffic ?? 1, (v) => { D.env.traffic = v; applyEnv(); schedule(); }, (v) => v.toFixed(1) + '×'),

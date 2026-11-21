@@ -6,7 +6,7 @@ import { CH } from './world.js';
 export const SAVE_VERSION = 2;
 export class Director {
   constructor(hooks = {}) {
-    this.hooks = hooks; this.seed = 20261120; this.env = { time: 'night', rain: .6, fog: .5, mood: 'noir', district: 'auto', traffic: 1 };
+    this.hooks = hooks; this.seed = 20261120; this.env = { time: 'night', rain: .6, fog: .5, mood: 'noir', district: 'auto', traffic: 1, biome: 'city' };
     this.characters = []; this.script = []; this.duration = 30; this.selected = null; this.time = 0; this.playing = false; this.fired = new Set(); this.cameraMode = 'follow'; this.prompt = '';
   }
   get sel() { return this.characters.find((c) => c.id === this.selected) || this.characters[0] || null; }

@@ -10,3 +10,9 @@ const b = parsePrompt('A detective walks in the foggy night. He says "Hello ther
 const c = parsePrompt('دو مرد و یک ربات، غروب، دوربین هوایی، ۳۰ ثانیه'); assert.equal(c.characters.length, 3); assert.equal(c.camera, 'aerial'); assert.equal(c.env.time, 'dusk'); assert.equal(c.duration, 30);
 const d = parsePrompt(''); assert.equal(d.characters.length, 1);
 console.log('prompt ok —', a.notes.join(' | '));
+{
+  const cases = [['یک مرد در جنگل راه می‌رود', 'forest'], ['A man walks in the desert at night', 'desert'], ['غروب کنار دریا', 'beach'], ['برف می‌بارد روی کوه', 'snow'], ['در دشت و مزرعه', 'meadow'], ['او در شهر راه می‌رود', 'city']];
+  for (const [t, b] of cases) { const p = parsePrompt(t); if (p.env.biome !== b) throw new Error('biome ' + t + ' → ' + p.env.biome); }
+  const f = parsePrompt('یک مرد در جنگل راه می‌رود'); if (f.env.time !== 'day' || f.env.rain !== 0) throw new Error('nature defaults');
+  console.log('biome prompt ok');
+}

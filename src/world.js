@@ -138,8 +138,9 @@ export function movingCars(seed, t, zMin, zMax, density = 1) {
   return out;
 }
 // آیا نقطه روی مسیر قابل‌عبور است؟ (خیابان + پیاده‌رو)؛ در چهارراه می‌شود به خیابان فرعی رفت
+export const walkState = { half: WALK_HALF, city: true };
 export function clampWalk(x, z, margin = .4) {
   const k = chunkIndex(z), mid = chunkZ0(k) + CH / 2;
-  const free = isIntersection(k) && Math.abs(z - mid) < 7;
-  return { x: free ? clamp(x, -30, 30) : clamp(x, -(WALK_HALF - margin), WALK_HALF - margin), z };
+  const free = walkState.city && isIntersection(k) && Math.abs(z - mid) < 7;
+  return { x: free ? clamp(x, -30, 30) : clamp(x, -(walkState.half - margin), walkState.half - margin), z };
 }

@@ -51,7 +51,7 @@ export const GROUND_VS = `#version 300 es
 layout(location=0) in vec2 a_p; uniform mat4 u_vp; uniform vec2 u_ctr; out vec3 v_wp;
 void main(){ vec3 wp=vec3(u_ctr.x+a_p.x*260., 0., u_ctr.y+a_p.y*260.); v_wp=wp; gl_Position=u_vp*vec4(wp,1.); }`;
 export const GROUND_FS = COMMON + `
-in vec3 v_wp; uniform float u_lamp, u_rain; out vec4 o;
+in vec3 v_wp; uniform float u_lamp, u_rain, u_biome, u_water; uniform vec3 u_g1, u_g2, u_gp; out vec4 o;
 float lampPool(vec2 p){ float zz=mod(p.y-10.+8.,16.)-8.; float a=exp(-(pow(abs(p.x)-6.8,2.)+zz*zz)/26.); return a; }
 void main(){
   vec2 p=v_wp.xz; float ax=abs(p.x);
@@ -60,6 +60,25 @@ void main(){
   vec3 col; float walk=0.;
   float dg=length(v_wp-u_cam), det=smoothstep(110.,25.,dg);
   float nz=fbm(p*.8), nz2=mix(.5,fbm(p*5.),det);
+  float water=0.;
+  if(u_biome>.5){
+    float wx=19.+sin(p.y*.04)*3.+sin(p.y*.11)*1.2;
+    float nn=fbm(p*.12), n2=mix(.5,fbm(p*2.5),det);
+    col=mix(u_g1,u_g2,nn)*(.8+.4*n2);
+    float trail=smoothstep(2.3,1.3,abs(p.x)+(n2-.5)*.8);
+    col=mix(col,u_gp*(.75+.5*n2),trail*.9);
+    if(u_biome<1.5){ col*=.7+.5*smoothstep(.35,.75,fbm(p*.5+7.)); }
+    else if(u_biome<2.5){ col*=.93+.07*sin(p.x*3.+nn*8.+p.y*.5); }
+    else if(u_biome<3.5){ col+=vec3(step(.985,h21(floor(p*6.)))*det*.3); }
+    else if(u_biome<4.5){ float fl=step(.982,h21(floor(p*3.)))*det*(1.-trail); col=mix(col,mix(vec3(1.,.9,.3),vec3(.95,.3,.4),h21(floor(p*3.)+4.)),fl); }
+    else if(u_biome<5.5){
+      if(p.x>wx){ water=1.; float d=p.x-wx; col=mix(vec3(.12,.42,.5),vec3(.02,.18,.3),smoothstep(0.,25.,d));
+        col+=vec3(.5,.7,.75)*pow(max(sin(p.x*.8+u_time*1.1+p.y*.3)*sin(p.y*.6-u_time*.7),0.),6.)*.25*det;
+        col=mix(col,vec3(.95),smoothstep(2.5,0.,d)*(.5+.5*sin(p.y*.9+u_time*2.))*.6); }
+      else col*=1.-.3*smoothstep(4.,0.,wx-p.x);
+    } else { col*=.8+.4*h21(floor(p*8.))*det; }
+    col*=u_amb*.9+u_sun*.5;
+  } else
   if(ax<7.||cross_){
     col=vec3(.07,.075,.08)*(.7+.6*nz2);
     if(!cross_||ax<7.){ float dash=mix(.5,step(mod(p.y,6.),3.),smoothstep(260.,90.,dg)); col=mix(col,vec3(.75,.7,.5),dash*smoothstep(.2,.12,ax)*.8*step(.01,ax)); col=mix(col,vec3(.7,.68,.55),smoothstep(.22,.1,abs(ax-6.4))*.6); }
@@ -67,10 +86,10 @@ void main(){
   } else if(ax<10.6){ walk=1.; vec2 g=p/1.6; vec2 f=fract(g); float seam=mix(.85,smoothstep(.0,.04,min(f.x,f.y)),det); col=mix(vec3(.05),vec3(.17,.17,.16)*(.7+.5*nz2),seam); if(ax<7.3) col=vec3(.2)*(.8+.3*nz); }
   else col=vec3(.03);
   float pud=smoothstep(.45,.62,fbm(p*.35+3.))*u_wet;
-  float pool=lampPool(p)*u_lamp;
+  float pool=lampPool(p)*u_lamp*step(u_biome,.5);
   col+=vec3(1.,.72,.42)*pool*.35*(.4+.6*u_wet);
   vec3 V=normalize(u_cam-v_wp); float fres=pow(1.-max(V.y,0.),3.);
-  float refl=clamp(u_wet*(.35+.5*pud)+ (1.-walk)*u_wet*.15,0.,.85); refl=mix(refl,min(refl+.25,.95),fres);
+  float refl=clamp(u_wet*(.35+.5*pud)+ (1.-walk)*u_wet*.15,0.,.85); refl=mix(refl,min(refl+.25,.95),fres); refl=max(refl,u_water*water*.62);
   float rip=u_rain*u_wet*pud*(.5+.5*sin(length(fract(p*.7)-.5)*60.-u_time*9.))*.07*det; col+=rip;
   float alpha=1.-refl; vec3 c=col;
   c=applyFog(c,v_wp);

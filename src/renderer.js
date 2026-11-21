@@ -1,7 +1,8 @@
 // رندر WebGL2: آسمان/مه (شیدر)، ساختمان‌های سه‌بعدی نمونه‌ای، خیابان خیس با بازتاب آینه‌ای، درخشش چراغ‌ها، باران، شخصیت‌ها
 import { persp, lookAt, mul, inv, ident, scale as mScale } from './mat.js';
 import * as SH from './shaders.js';
-import { makeChunk, movingCars, carBoxes, chunkIndex, STRIDE, CH } from './world.js';
+import { makeAnyChunk, BIOMES } from './biomes.js';
+import { movingCars, carBoxes, chunkIndex, STRIDE, CH } from './world.js';
 import { characterParts } from './character.js';
 import { clamp, lerp, smooth } from './util.js';
 
@@ -77,7 +78,7 @@ export class Renderer {
   }
   setQuality(name) { const q = QUALITY[name]; if (!q) return; this.qName = name; this.q = { ...q }; this.scale = q.scale; this._rainBuild(q.rain); this.resize(); }
   setSeed(seed, district) { if (seed !== this.seed || district !== this.district) { this.seed = seed >>> 0; this.district = district || 'auto'; this.clearChunks(); } }
-  setEnv(e) { Object.assign(this.env, e); this.litMul = this.env.litMul ?? 1; }
+  setEnv(e) { const ob = this.env.biome; Object.assign(this.env, e); if ((this.env.biome || 'city') !== (ob || 'city')) this.clearChunks(); this.litMul = this.env.litMul ?? 1; }
   clearChunks() { const gl = this.gl; for (const c of this.chunks.values()) { gl.deleteBuffer(c.buf); gl.deleteVertexArray(c.vao); } this.chunks.clear(); }
   resize() {
     const c = this.canvas, dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.max(2, Math.floor(c.clientWidth * dpr * this.scale)), h = Math.max(2, Math.floor(c.clientHeight * dpr * this.scale));
@@ -91,7 +92,7 @@ export class Renderer {
     let made = 0;
     for (const k of want) {
       if (this.chunks.has(k)) continue; if (made >= this.genBudget) break;
-      const d = makeChunk(this.seed, k, { district: this.district, lit: this.litMul }); const buf = gl.createBuffer();
+      const d = makeAnyChunk(this.seed, k, { district: this.district, lit: this.litMul, biome: this.env.biome }); const buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, d.boxes, gl.STATIC_DRAW);
       this.chunks.set(k, { d, buf, vao: this._boxVAO(buf), born: now }); made++; this.stats.gen++;
     }
@@ -101,9 +102,10 @@ export class Renderer {
   _palette() {
     const e = this.env, a = PAL[e.time] || PAL.night, w = clamp(e.rain ?? 0, 0, 1), f = clamp(e.fog ?? 0, 0, 1), dark = 1 - .22 * w;
     const m = (v, k = 1) => v.map((x) => x * k);
+    const B = BIOMES[e.biome] || BIOMES.city, nat = B.id !== 'city', br = clamp((a.hor[0] + a.hor[1] + a.hor[2]) / 3 * 1.5, .15, 1), tint = (v) => nat ? v.map((x, i) => x * .55 + B.fogC[i] * br * .45) : v;
     return {
-      zen: m(a.zen, dark), hor: m(a.hor, dark), glow: m(a.glow, 1 - .4 * w), fogA: m(a.fogA, dark), fogB: m(a.fogB, 1 - .3 * w), amb: a.amb, sun: m(a.sun, 1 - .6 * w),
-      fogD: a.fog * (1 + f * 2.4 + w * .8), lamp: a.lamp, lit: a.lit * this.litMul, exp: a.exp, stars: a.stars * (1 - w) * (1 - f * .7), cloud: .35 + .5 * Math.max(w, f), wet: w * .95 + (e.time === 'day' ? 0 : .05), rain: w,
+      zen: m(a.zen, dark), hor: m(a.hor, dark), glow: m(a.glow, 1 - .4 * w), fogA: tint(m(a.fogA, dark)), fogB: tint(m(a.fogB, 1 - .3 * w)), amb: a.amb, sun: m(a.sun, 1 - .6 * w),
+      fogD: a.fog * (nat ? B.fog : 1) * (1 + f * 2.4 + w * .8), lamp: nat ? 0 : a.lamp, biome: B, lit: a.lit * this.litMul, exp: a.exp, stars: a.stars * (1 - w) * (1 - f * .7), cloud: .35 + .5 * Math.max(w, f), wet: w * .95 + (e.time === 'day' ? 0 : .05), rain: w,
       sat: e.mood === 'color' ? 1 : e.mood === 'red' ? .18 : .1,
     };
   }
@@ -127,14 +129,15 @@ export class Renderer {
     gl.bindVertexArray(this.emptyVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     // ماشین‌های متحرک + چراغ‌ها
-    const zMin = camera.pos[2] - this.q.view * CH, zMax = camera.pos[2] + 40, cars = movingCars(this.seed, t, zMin, zMax, this.env.traffic ?? 1), cb = [];
+    const zMin = camera.pos[2] - this.q.view * CH, zMax = camera.pos[2] + 40, cars = (pal.biome.id === 'city') ? movingCars(this.seed, t, zMin, zMax, this.env.traffic ?? 1) : [], cb = [];
     for (const c of cars) carBoxes(cb, c.x, c.z, c.head, c.hv);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.carBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cb), gl.DYNAMIC_DRAW); const carCount = cb.length / STRIDE;
     const pts = this._points(cars, pal);
-    const mirrorPass = this.q.reflect && pal.wet > .08;
+    const mirrorPass = this.q.reflect && (pal.wet > .08 || pal.biome.water);
     if (mirrorPass) { gl.frontFace(gl.CW); this._scene(-1, pal, characters, carCount, now, pts, true); gl.frontFace(gl.CCW); }
     // زمین (نیمه‌شفاف تا بازتاب پیدا باشد)
     P = this.P.ground; gl.useProgram(P.p); this._common(P, pal); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform2f(P.u.u_ctr, camera.pos[0], camera.pos[2]);
+    { const B = pal.biome, g = B.g1 || [0, 0, 0]; gl.uniform1f(P.u.u_biome, B.n); gl.uniform1f(P.u.u_water, B.water || 0); gl.uniform3f(P.u.u_g1, ...g); gl.uniform3f(P.u.u_g2, ...(B.g2 || g)); gl.uniform3f(P.u.u_gp, ...(B.path || g)); }
     if (mirrorPass) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); } else { gl.disable(gl.BLEND); gl.uniform1f(P.u.u_wet, pal.wet * .4); }
     gl.disable(gl.CULL_FACE); gl.bindVertexArray(this.groundVAO); gl.drawArrays(gl.TRIANGLES, 0, 6); gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
     this._scene(1, pal, characters, carCount, now, pts, false);

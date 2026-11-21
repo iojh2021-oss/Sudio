@@ -25,6 +25,12 @@ export function parsePrompt(text) {
   if (has(t, /نوآر|noir|سیاه\s*و\s*سفید|black and white/)) { env.mood = 'noir'; notes.push('سبک نوآر'); } else if (has(t, /رنگی|colorful|color/)) { env.mood = 'color'; notes.push('رنگی'); } else if (has(t, /قرمز|red/)) env.mood = 'red';
   if (has(t, /مرکز شهر|downtown|آسمان\s*خراش|skyscraper|برج/)) { env.district = 'downtown'; notes.push('مرکز شهر'); } else if (has(t, /قدیمی|old|کهنه|historic/)) { env.district = 'old'; notes.push('محلهٔ قدیمی'); } else if (has(t, /صنعتی|کارخانه|industrial|factory/)) { env.district = 'industrial'; notes.push('منطقهٔ صنعتی'); } else if (has(t, /خلوت|ساکت|quiet|empty|متروک/)) { env.district = 'quiet'; notes.push('خیابان خلوت'); }
   if (has(t, /شلوغ|ترافیک|busy|traffic/)) env.traffic = 1.6; else if (has(t, /خلوت|بدون ماشین|empty/)) env.traffic = .3;
+  const BIO = [['forest', /جنگل|درختان|forest|woods|woodland|jungle/], ['desert', /بیابان|صحرا|کویر|desert|dune|sahara/], ['snow', /برف|زمستان|snow|winter|arctic|tundra|قطب/], ['beach', /ساحل|دریا|اقیانوس|beach|seaside|ocean|coast|shore/], ['mountain', /کوهستان|کوه|صخره|mountain|alps|cliff|canyon/], ['meadow', /دشت|مرغزار|چمنزار|مزرعه|روستا|تپه|meadow|field|farm|village|countryside|grassland|valley/]];
+  const bio = BIO.find(([, re]) => has(t, re));
+  if (bio) {
+    env.biome = bio[0]; notes.push('محیط: ' + { forest: 'جنگل', desert: 'بیابان', snow: 'برفی', beach: 'ساحل', mountain: 'کوهستان', meadow: 'دشت' }[bio[0]]);
+    if (env.time == null) env.time = 'day'; if (env.rain == null) env.rain = 0; if (env.fog == null) env.fog = .22; if (env.mood == null) env.mood = 'color'; env.traffic = 0;
+  } else if (has(t, /شهر|خیابان|city|street|downtown|urban/) || env.district) env.biome = 'city'; else env.biome = 'city';
 
   let camera = 'follow';
   if (has(t, /هوایی|از بالا|aerial|drone|crane/)) camera = 'aerial'; else if (has(t, /روبه\s*رو|رو به رو|سینمایی|نمای پایین|low angle|street level|front/)) camera = 'street'; else if (has(t, /مداری|orbit/)) camera = 'orbit';
