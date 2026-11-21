@@ -27,7 +27,7 @@ void main(){
     if(abs(N.y)<.5){
       float along=abs(N.x)>.5? v_wp.z : v_wp.x; vec2 g=vec2(along/2.7, v_wp.y/3.5); vec2 cell=floor(g), f=fract(g);
       float r=h21(cell+v_k.z), r2=h21(cell*1.7+v_k.z+3.1);
-      float dd=length(v_wp-u_cam), det=smoothstep(230.,70.,dd)*smoothstep(.07,.4,abs(dot(N,(u_cam-v_wp)/max(dd,1e-3))));
+      float dd=length(v_wp-u_cam), det=smoothstep(230.,70.,dd)*smoothstep(.1,.45,abs(dot(N,(u_cam-v_wp)/max(dd,1e-3))))*smoothstep(1.1,.3,fwidth(g.x)+.6*fwidth(g.y));
       bool win = f.x>.2&&f.x<.8&&f.y>.2&&f.y<.78&&v_wp.y>2.2;
       if(det<.02){ col=mix(col*(.75+.25*h21(floor(g/6.))), vec3(1.,.8,.5)*.55, clamp(v_k.y*u_lit,0.,.9)*.35*step(2.2,v_wp.y)); }
       else if(win){

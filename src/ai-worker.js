@@ -1,10 +1,27 @@
 // کارگر وب: مدل متن‌به‌تصویر Janus-Pro-1B (deepseek-ai, مجوز MIT) با Transformers.js روی WebGPU
 // برگرفته از نمونهٔ رسمی huggingface/transformers.js-examples/janus-pro-webgpu
-import { AutoProcessor, MultiModalityCausalLM, BaseStreamer } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
+import { AutoProcessor, MultiModalityCausalLM, BaseStreamer, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.2';
+import { ensureFile, opfsOk, fileKey } from './dl.js';
 
 const MODEL = 'onnx-community/Janus-Pro-1B-ONNX';
 let fp16 = false, processor = null, model = null, loading = null;
 const post = (m) => self.postMessage(m);
+// ذخیرهٔ قابل‌ازسرگیری: هر فایل مدل از طریق dl.js (OPFS + Range) می‌آید؛ اگر OPFS نبود رفتار پیش‌فرض Transformers.js می‌ماند
+if (opfsOk()) {
+  const legacy = async (url) => { try { if (!self.caches) return undefined; return await (await caches.open('transformers-cache')).match(url); } catch { return undefined; } };
+  env.useBrowserCache = false; env.useCustomCache = true;
+  env.customCache = {
+    async match(key) {
+      if (!/^https:\/\/huggingface\.co\//.test(key)) return undefined;
+      const old = await legacy(key); if (old) return old;
+      const file = fileKey(key);
+      const r = await ensureFile(key, { report: (x) => post({ type: 'progress', x: { status: 'progress', name: MODEL, file, loaded: x.loaded, total: x.total, progress: x.total ? x.loaded / x.total * 100 : 0, resumed: !!x.resumed } }), onNote: (text) => post({ type: 'note', text }) });
+      if (!r) return undefined;
+      return new Response(r.file.stream(), { status: 200, headers: { 'Content-Length': String(r.total) } });
+    },
+    async put() {},
+  };
+}
 
 async function check() {
   if (!self.navigator.gpu) throw new Error('WebGPU در این مرورگر فعال نیست');

@@ -2,6 +2,7 @@
 //  janus: مدل Janus-Pro-1B داخل مرورگر (WebGPU، حدود ۲٫۴ گیگابایت دانلود، یک‌بار)
 //  http : هر سرور/برنامهٔ سازگار با AUTOMATIC1111 (/sdapi/v1/txt2img) مثل Local Dream روی همان گوشی یا ComfyUI/Forge روی رایانه
 import { BIOMES } from './biomes.js';
+import { scanStore, clearStore, opfsReadOk } from './dl.js';
 
 const BIO_EN = { city: 'a film noir city street with tall art deco skyscrapers, wet asphalt, street lamps', forest: 'a dense misty forest with tall pine and oak trees and a dirt trail', desert: 'a vast sandy desert with dunes, cacti and distant red mesas', snow: 'a snowy winter landscape with frosty pine trees and snow drifts', meadow: 'a green countryside meadow with wildflowers, wooden fence and a small farmhouse', beach: 'a tropical beach with palm trees, golden sand and turquoise sea', mountain: 'a rugged rocky mountain valley with snow-capped peaks' };
 const TIME_EN = { night: 'at night, moonlit, dark blue sky', dusk: 'at sunset, golden hour, orange sky', dawn: 'at dawn, soft pink light', day: 'in bright daylight, blue sky with clouds' };
@@ -23,6 +24,7 @@ export const fmtEta = (s) => s == null || !isFinite(s) ? '—' : s < 60 ? Math.c
 export class DownloadTracker {
   constructor(expected = 2.4e9) { this.expected = expected; this.reset(); }
   reset() { this.files = new Map(); this.samples = []; this.speed = 0; this.t0 = 0; }
+  seed(list) { for (const f of list || []) this.files.set(f.file, { name: f.file, loaded: f.loaded, total: f.total || f.loaded, done: !!f.done }); }
   update(x, now = performance.now()) {
     if (!x || !x.file) return; const f = this.files.get(x.file) || { name: x.file, loaded: 0, total: 0, done: false }; if (!this.t0) this.t0 = now;
     if (x.status === 'progress' || x.status === 'download') { f.loaded = x.loaded || f.loaded; f.total = x.total || f.total; } else if (x.status === 'done') { f.total = f.total || f.loaded; f.loaded = f.total; f.done = true; }
@@ -36,12 +38,14 @@ export class DownloadTracker {
     return { loaded, total, pct: total ? Math.min(1, loaded / total) : 0, speed: this.speed, eta: this.speed > 1e4 ? (total - loaded) / this.speed : null, files: fs, allDone: fs.length > 0 && fs.every((v) => v.done) };
   }
 }
-const CACHE = 'transformers-cache', MODEL_RE = /Janus-Pro-1B-ONNX/;
+const CACHE = 'transformers-cache', MODEL_RE = /Janus-Pro-1B-ONNX/, NEED = ['language_model', 'gen_head', 'image_decode'];
 export async function modelCacheInfo() {
-  try { if (!self.caches) return { cached: false }; const c = await caches.open(CACHE), ks = (await c.keys()).filter((r) => MODEL_RE.test(r.url));
-    return { cached: ['language_model', 'gen_head', 'image_decode'].every((n) => ks.some((r) => r.url.includes(n))), files: ks.length }; } catch { return { cached: false }; }
+  const o = { cached: false, partial: false, saved: 0, total: 0, list: [], resumable: opfsReadOk() };
+  try { const sc = await scanStore(); o.list = sc.files; o.saved = sc.saved; o.total = sc.total; if (sc.files.length && NEED.every((n) => sc.files.some((f) => f.file.includes(n) && f.done))) o.cached = true; } catch {}
+  try { if (!o.cached && self.caches) { const ks = (await (await caches.open(CACHE)).keys()).filter((r) => MODEL_RE.test(r.url)); if (NEED.every((n) => ks.some((r) => r.url.includes(n)))) o.cached = true; } } catch {}
+  o.partial = !o.cached && o.saved > 0; return o;
 }
-export async function clearModelCache() { try { const c = await caches.open(CACHE); let n = 0; for (const r of await c.keys()) if (MODEL_RE.test(r.url)) { await c.delete(r); n++; } return n; } catch { return 0; } }
+export async function clearModelCache() { let n = 0; try { n = (await scanStore()).files.length; await clearStore(); const c = await caches.open(CACHE); for (const r of await c.keys()) if (MODEL_RE.test(r.url)) { await c.delete(r); n++; } } catch {} return n; }
 export async function storageInfo() {
   try { const e = await navigator.storage.estimate(); const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false; return { free: (e.quota || 0) - (e.usage || 0), quota: e.quota || 0, persisted }; } catch { return null; }
 }
@@ -53,6 +57,7 @@ export class AIBackdrop {
     const w = this.worker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
     w.onmessage = (e) => {
       const m = e.data || {};
+      if (m.type === 'note') { this.onProgress && this.onProgress({ phase: 'note', text: m.text }); return; }
       if (m.type === 'info') { this.dl.expected = m.fp16 ? 2.4e9 : 4e9; return; }
       if (m.type === 'progress') { const x = m.x || {}; this.dl.update(x); this.onProgress && this.onProgress({ phase: 'download', snap: this.dl.snap(), p: this.dl.snap().pct }); return; }
       if (m.type === 'gen-progress') { this.onProgress && this.onProgress({ phase: 'gen', p: m.p }); return; }

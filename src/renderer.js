@@ -7,7 +7,7 @@ import { characterParts } from './character.js';
 import { clamp, lerp, smooth } from './util.js';
 
 const PAL = {
-  night: { zen: [.008, .016, .03], hor: [.17, .2, .23], glow: [.5, .48, .42], fogA: [.09, .11, .14], fogB: [.17, .18, .19], fog: .0105, amb: [.2, .23, .3], sun: [.16, .18, .24], lamp: 1, lit: 1.35, exp: .95, stars: 1 },
+  night: { zen: [.008, .016, .03], hor: [.17, .2, .23], glow: [.5, .48, .42], fogA: [.08, .1, .13], fogB: [.44, .43, .39], fog: .0105, amb: [.2, .23, .3], sun: [.16, .18, .24], lamp: 1, lit: 1.7, exp: .95, stars: 1 },
   dusk: { zen: [.04, .06, .12], hor: [.62, .4, .3], glow: [1, .6, .3], fogA: [.36, .26, .24], fogB: [.75, .5, .34], fog: .009, amb: [.22, .2, .24], sun: [.55, .36, .22], lamp: .75, lit: .65, exp: 1.0, stars: .2 },
   dawn: { zen: [.09, .13, .2], hor: [.7, .6, .55], glow: [1, .82, .62], fogA: [.45, .46, .48], fogB: [.8, .68, .58], fog: .0095, amb: [.28, .3, .34], sun: [.5, .4, .3], lamp: .3, lit: .25, exp: 1.0, stars: 0 },
   day: { zen: [.24, .4, .62], hor: [.74, .8, .84], glow: [1, .96, .86], fogA: [.6, .65, .68], fogB: [.85, .86, .84], fog: .0062, amb: [.5, .52, .56], sun: [.85, .8, .7], lamp: 0, lit: .04, exp: .95, stars: 0 },
@@ -128,7 +128,7 @@ export class Renderer {
     if (this.lost) return; const gl = this.gl, { camera, characters, t } = state; this.t = t; this.resize();
     const W = this.canvas.width, H = this.canvas.height, pal = this._palette(), now = t;
     this.camPos = camera.pos.slice();
-    const proj = persp(camera.fov * Math.PI / 180, W / H, .3, 900), view = lookAt(camera.pos, camera.target, [0, 1, 0]);
+    const asp = W / H, fovEff = asp < .8 ? camera.fov * (1 + (.8 - asp) * .75) : camera.fov, proj = persp(Math.min(fovEff, 92) * Math.PI / 180, asp, .3, 900), view = lookAt(camera.pos, camera.target, [0, 1, 0]);
     this.vp = mul(proj, view); this.invVP = inv(this.vp); this._stream(camera.pos[2], now);
     gl.viewport(0, 0, W, H); gl.clearColor(pal.hor[0] * .5, pal.hor[1] * .5, pal.hor[2] * .5, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.stats.draws = 0;
