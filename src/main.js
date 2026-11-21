@@ -93,7 +93,10 @@ export function boot() {
   function aiProgress(e) { if (e.phase === 'note') { aiNote = e.text; paintDl(); return; } if (e.phase === 'download') { aiSnap = e.snap; aiPhase = e.snap.allDone || e.snap.pct > .995 ? 'loading' : 'downloading'; paintDl(); } else setAiStatus('ساخت تصویر… ' + Math.round(e.p * 100) + '٪'); }
   const FLAG = 'sudio.ai.stage', flag = (v) => { try { v ? localStorage.setItem(FLAG, v) : localStorage.removeItem(FLAG); } catch {} }, getFlag = () => { try { return localStorage.getItem(FLAG); } catch { return null; } };
   let aiCrash = getFlag();                                   // اگر مقدار دارد یعنی بار قبل برنامه در همین مرحله بسته شده است
+  let aiForce = false, aiPing = '';
+  const isWeak = () => !!(aiGpu && (!aiGpu.ok || (!aiGpu.f16 && ((aiGpu.mem && aiGpu.mem <= 4) || (aiGpu.maxBuf && aiGpu.maxBuf < 1.5e9)))));
   async function aiLoad() {
+    if (isWeak() && !aiForce && !ai.ready) { toast('این گوشی برای مدل داخل مرورگر ضعیف است؛ موتور «سرور» را انتخاب کن', 5000); return; }
     if (ai.ready || aiPhase === 'downloading' || aiPhase === 'loading') return; aiErr = ''; aiNote = ''; aiCrash = null; aiPhase = 'downloading'; ai.dl.reset(); try { const inf = await modelCacheInfo(); ai.dl.seed(inf.list); } catch {} aiSnap = ai.dl.snap(); ai.onProgress = aiProgress; paintDl();
     try {
       if (!(aiCache && aiCache.cached)) { flag('download'); await ai.download(); aiCache = await modelCacheInfo(); }
@@ -115,7 +118,7 @@ export function boot() {
   }
   function aiTick() { if (!aiAuto || ai.busy || !D.sel || !(ai.engine !== 'janus' || ai.ready)) return; if (aiLastZ == null) aiLastZ = D.sel.z; if (Math.abs(D.sel.z - aiLastZ) > 60) { aiLastZ = D.sel.z; aiGenerate(); } }
   function paneAI() {
-    if (aiGpu == null) detectWebGPU().then((g) => { aiGpu = g; if (tab === 'ai') renderPane(); });
+    if (aiGpu == null) detectWebGPU().then((g) => { aiGpu = g; if (isWeak() && !ai.ready && !aiForce) ai.engine = 'http'; if (tab === 'ai') renderPane(); });
     if (aiCache == null) { aiCache = { cached: false }; modelCacheInfo().then((c) => { aiCache = c; if (c.partial) { ai.dl.expected = Math.max(ai.dl.expected, c.total); } storageInfo().then((x) => { aiStore = x; paintDl(); }); if (tab === 'ai') renderPane(); }); }
     const box = h('div'); dlEls = null;
     const ta = h('textarea', { placeholder: scenePrompt(D.env), style: 'min-height:70px;direction:ltr' }); ta.value = aiTxt; ta.addEventListener('input', () => { aiTxt = ta.value; });
@@ -131,6 +134,8 @@ export function boot() {
         low ? h('div', { class: 'dl-err' }, `⚠ فضای خالی مرورگر (${fmtBytes(aiStore.free)}) برای مدل کم است؛ جا باز کن.`) : '',
         aiGpu && aiGpu.ok ? h('div', { class: 'dl-n', style: 'direction:ltr;text-align:left' }, `shader-f16: ${aiGpu.f16 ? 'YES' : 'NO'} · maxBuffer: ${fmtBytes(aiGpu.maxBuf)} · RAM≈${aiGpu.mem || '?'}GB · ${aiGpu.gpu || 'gpu?'}`) : '',
         aiGpu && !aiGpu.ok ? h('div', { class: 'dl-err' }, '✗ ' + aiGpu.why) : '',
+        isWeak() ? h('div', { class: 'dl-err' }, '⚠ این گوشی (بدون shader-f16، رم ≈' + (aiGpu.mem || '?') + ' گیگ) برای Janus-Pro کافی نیست و برنامه هنگام بارگذاری بسته می‌شود. «بارگذاری» غیرفعال شد؛ از موتور «سرور» استفاده کن.') : '',
+        isWeak() && !aiForce ? h('div', { class: 'row' }, h('button', { class: 'btn pri', onclick: () => { ai.engine = 'http'; renderPane(); } }, '➜ رفتن به موتور سرور'), h('button', { class: 'btn sm', onclick: () => { if (confirm('احتمال بسته‌شدن برنامه زیاد است. ادامه؟')) { aiForce = true; renderPane(); } } }, 'تلاش به‌هرحال')) : '',
         aiCrash ? h('div', { class: 'dl-err' }, aiCrash === 'download' ? '⚠ بار قبل برنامه وسط «دانلود» بسته شد. دانلود از همان‌جا ادامه دارد؛ اگر دوباره بسته شد، موتور «سرور» را انتخاب کن.' : '⚠ بار قبل برنامه وسط «ساخت مدل در حافظه» بسته شد (فایل‌ها کامل دانلود شده‌اند). یعنی رم گوشی برای این مدل کافی نیست؛ موتور «سرور» (مثلاً Local Dream) مطمئن‌تر است.') : '',
         h('div', { class: 'row', style: 'margin-top:8px' },
           aiPhase === 'downloading' || aiPhase === 'loading' ? h('button', { class: 'btn', onclick: () => { ai.cancel(); aiPhase = 'idle'; aiSnap = null; paintDl(); renderPane(); } }, '⏹ لغو')
@@ -139,7 +144,9 @@ export function boot() {
         h('p', { class: 'note' }, 'بار اول حدود ۲٫۴ گیگابایت است. هر بخش دانلودشده همان لحظه در حافظهٔ خصوصی مرورگر ذخیره می‌شود؛ اگر صفحه بسته شد یا اینترنت قطع شد، دفعهٔ بعد «ادامه دانلود» دقیقاً از همان‌جا ادامه می‌دهد (نه از اول). بهتر است روی Wi-Fi باشی.')));
       paintDl();
     } else { const u = h('input', { type: 'text', value: ai.url, style: 'direction:ltr' }); u.addEventListener('change', () => { ai.url = u.value.trim(); });
-      box.append(h('label', null, 'آدرس سرور'), u, slider('تعداد گام', 1, 50, 1, ai.steps, (v) => { ai.steps = v; }, (v) => v), h('p', { class: 'note' }, 'مرورگر باید اجازهٔ دسترسی (CORS) داشته باشد. برای برنامهٔ محلی روی همین گوشی معمولاً آدرس http://127.0.0.1:پورت است.')); dlEls = { st }; }
+      const pg = h('div', { class: 'note' }, aiPing);
+      box.append(h('label', null, 'آدرس سرور'), u, h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { pg.textContent = 'در حال تست…'; try { await ai.ping(); aiPing = '✓ سرور پاسخ داد'; } catch (e) { aiPing = '✗ ' + e.message; } pg.textContent = aiPing; } }, '🔌 تست اتصال'), pg), slider('تعداد گام', 1, 50, 1, ai.steps, (v) => { ai.steps = v; }, (v) => v), h('p', { class: 'note' }, 'مرورگر باید اجازهٔ دسترسی (CORS) داشته باشد. برای برنامهٔ محلی روی همین گوشی معمولاً آدرس http://127.0.0.1:پورت است.'),
+        h('p', { class: 'note' }, 'راهنما: برنامهٔ «Local Dream» (متن‌باز، مخصوص چیپ اسنپدراگون) را نصب کن، یک مدل بگیر و حالت سرور/API را روشن کن؛ بعد آدرس همان‌جا را اینجا بگذار و «تست اتصال» بزن. روی رایانه هم AUTOMATIC1111 با --api --cors-allow-origins=* یا Forge کار می‌کند (آدرس IP رایانه در همان Wi-Fi).')); dlEls = { st }; }
     box.append(h('label', null, 'توصیف تصویر (انگلیسی؛ خالی = از روی صحنه ساخته می‌شود)'), ta,
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: aiGenerate }, '✨ ساخت پس‌زمینه'), h('button', { class: 'btn', onclick: () => { renderer.clearBackdrop(); setAiStatus('پس‌زمینه حذف شد'); } }, '🧹 حذف پس‌زمینه')), st);
     const chk = h('input', { type: 'checkbox' }); chk.checked = aiAuto; chk.addEventListener('change', () => { aiAuto = chk.checked; aiLastZ = null; });

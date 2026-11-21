@@ -76,6 +76,11 @@ export class AIBackdrop {
   }
   async download() { if (this.engine !== 'janus') return; await this._call({ type: 'download' }); }
   cancel() { if (this.worker) { this.worker.terminate(); this.worker = null; } for (const r of this._wait.values()) r.rej(new Error('لغو شد')); this._wait.clear(); this.ready = false; this.busy = false; this.dl.reset(); }
+  async ping() {
+    const base = this.url.replace(/\/+$/, ''), ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000);
+    try { const r = await fetch(base + '/sdapi/v1/options', { signal: ctl.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return true; }
+    catch (e) { throw new Error(e.name === 'AbortError' ? 'پاسخی نیامد (۶ ثانیه)' : 'اتصال برقرار نشد (' + (e.message || e) + ')'); } finally { clearTimeout(t); }
+  }
   async generate(prompt) {
     if (this.busy) throw new Error('هنوز تصویر قبلی در حال ساخت است');
     this.busy = true;
