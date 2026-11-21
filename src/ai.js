@@ -51,7 +51,7 @@ export async function storageInfo() {
 }
 
 export class AIBackdrop {
-  constructor() { this.dl = new DownloadTracker(); this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
+  constructor() { this.dl = new DownloadTracker(); this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.size = 512; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
   _w() {
     if (this.worker) return this.worker;
     const w = this.worker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
@@ -78,14 +78,32 @@ export class AIBackdrop {
   cancel() { if (this.worker) { this.worker.terminate(); this.worker = null; } for (const r of this._wait.values()) r.rej(new Error('لغو شد')); this._wait.clear(); this.ready = false; this.busy = false; this.dl.reset(); }
   async ping() {
     const base = this.url.replace(/\/+$/, ''), ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 6000);
-    try { const r = await fetch(base + '/sdapi/v1/options', { signal: ctl.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return true; }
+    try { const r = await fetch(base + (this.engine === 'localdream' ? '/health' : '/sdapi/v1/options'), { signal: ctl.signal }); if (!r.ok) throw new Error('HTTP ' + r.status); return true; }
     catch (e) { throw new Error(e.name === 'AbortError' ? 'پاسخی نیامد (۶ ثانیه)' : 'اتصال برقرار نشد (' + (e.message || e) + ')'); } finally { clearTimeout(t); }
+  }
+  // Local Dream: POST /generate → جریان SSE؛ رویداد complete تصویر RGB خام (base64) برمی‌گرداند
+  async _localDream(prompt) {
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 900000);
+    try {
+      this.onProgress && this.onProgress({ phase: 'gen', p: .05 });
+      const r = await fetch(this.url.replace(/\/+$/, '') + '/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, signal: ctl.signal,
+        body: JSON.stringify({ prompt, negative_prompt: 'people, text, watermark, logo, blurry, low quality', steps: this.steps, cfg: 7.5, size: this.size, scheduler: 'dpm', seed: Math.floor(Math.random() * 2e9) }) });
+      if (!r.ok) throw new Error('پاسخ سرور ' + r.status);
+      const t = await r.text(); let img = null, w = 0, h = 0, err = null;
+      for (const blk of t.split(/\r?\n\r?\n/)) { const d = blk.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join(''); if (!d) continue; let j; try { j = JSON.parse(d); } catch { continue; } if (j.type === 'complete') { img = j.image; w = j.width; h = j.height; } else if (j.type === 'error') err = j.message; }
+      if (err) throw new Error(err); if (!img) { try { const j = JSON.parse(t); if (j.message) throw new Error(j.message); } catch (e) { if (e.message && !/JSON/.test(e.message)) throw e; } throw new Error('Local Dream تصویری برنگرداند'); }
+      const bin = atob(img), n = w * h, px = new Uint8ClampedArray(n * 4);
+      if (bin.length < n * 3) throw new Error('اندازهٔ تصویر نامعتبر است'); for (let i = 0, j = 0, k = 0; i < n; i++) { px[j++] = bin.charCodeAt(k++); px[j++] = bin.charCodeAt(k++); px[j++] = bin.charCodeAt(k++); px[j++] = 255; }
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h; cv.getContext('2d').putImageData(new ImageData(px, w, h), 0, 0);
+      return await new Promise((res, rej) => cv.toBlob((b) => b ? res(b) : rej(new Error('تبدیل تصویر ناموفق')), 'image/png'));
+    } catch (e) { throw new Error(e.name === 'AbortError' ? 'زمان انتظار تمام شد' : (/Failed to fetch|NetworkError|Load failed/.test(e.message) ? 'اتصال به Local Dream ممکن نشد (برنامه باز و مدل انتخاب‌شده باشد؛ آدرس http://127.0.0.1:8081)' : e.message)); } finally { clearTimeout(to); }
   }
   async generate(prompt) {
     if (this.busy) throw new Error('هنوز تصویر قبلی در حال ساخت است');
     this.busy = true;
     try {
       if (this.engine === 'janus') { await this.load(); const m = await this._call({ type: 'generate', prompt }); return m.blob; }
+      if (this.engine === 'localdream') return await this._localDream(prompt);
       const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 600000);
       try {
         this.onProgress && this.onProgress({ phase: 'gen', p: .05 });
