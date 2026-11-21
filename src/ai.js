@@ -38,7 +38,7 @@ export class DownloadTracker {
     return { loaded, total, pct: total ? Math.min(1, loaded / total) : 0, speed: this.speed, eta: this.speed > 1e4 ? (total - loaded) / this.speed : null, files: fs, allDone: fs.length > 0 && fs.every((v) => v.done) };
   }
 }
-const CACHE = 'transformers-cache', MODEL_RE = /Janus-Pro-1B-ONNX/, NEED = ['prepare_inputs_embeds_q4', 'language_model', 'lm_head', 'gen_head', 'image_decode'];
+const CACHE = 'transformers-cache', MODEL_RE = /Janus-Pro-1B-ONNX/, NEED = ['prepare_inputs_embeds_', 'language_model', 'lm_head', 'gen_head', 'image_decode'];
 export async function modelCacheInfo() {
   const o = { cached: false, partial: false, saved: 0, total: 0, list: [], resumable: opfsReadOk() };
   try { const sc = await scanStore(); o.list = sc.files; o.saved = sc.saved; o.total = sc.total; if (sc.files.length && NEED.every((n) => sc.files.some((f) => f.file.includes(n) && f.done))) o.cached = true; } catch {}
@@ -74,6 +74,7 @@ export class AIBackdrop {
     let lock = null; try { lock = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null; } catch {}
     try { await this._call({ type: 'load' }); this.ready = true; } finally { try { lock && lock.release(); } catch {} }
   }
+  async download() { if (this.engine !== 'janus') return; await this._call({ type: 'download' }); }
   cancel() { if (this.worker) { this.worker.terminate(); this.worker = null; } for (const r of this._wait.values()) r.rej(new Error('لغو شد')); this._wait.clear(); this.ready = false; this.busy = false; this.dl.reset(); }
   async generate(prompt) {
     if (this.busy) throw new Error('هنوز تصویر قبلی در حال ساخت است');

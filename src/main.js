@@ -91,10 +91,15 @@ export function boot() {
     E.err.textContent = aiErr; E.note.textContent = aiPhase === 'downloading' ? aiNote : '';
   }
   function aiProgress(e) { if (e.phase === 'note') { aiNote = e.text; paintDl(); return; } if (e.phase === 'download') { aiSnap = e.snap; aiPhase = e.snap.allDone || e.snap.pct > .995 ? 'loading' : 'downloading'; paintDl(); } else setAiStatus('ساخت تصویر… ' + Math.round(e.p * 100) + '٪'); }
+  const FLAG = 'sudio.ai.stage', flag = (v) => { try { v ? localStorage.setItem(FLAG, v) : localStorage.removeItem(FLAG); } catch {} }, getFlag = () => { try { return localStorage.getItem(FLAG); } catch { return null; } };
+  let aiCrash = getFlag();                                   // اگر مقدار دارد یعنی بار قبل برنامه در همین مرحله بسته شده است
   async function aiLoad() {
-    if (ai.ready || aiPhase === 'downloading' || aiPhase === 'loading') return; aiErr = ''; aiNote = ''; aiPhase = 'downloading'; ai.dl.reset(); try { const inf = await modelCacheInfo(); ai.dl.seed(inf.list); } catch {} aiSnap = ai.dl.snap(); ai.onProgress = aiProgress; paintDl();
-    try { await ai.load(); aiPhase = 'ready'; aiCache = await modelCacheInfo(); aiStore = await storageInfo(); setAiStatus('مدل آماده است ✓'); toast('مدل هوش مصنوعی آماده شد'); }
-    catch (e) { aiPhase = 'error'; aiErr = e.message === 'لغو شد' ? '' : 'خطا: ' + e.message + ' — «تلاش دوباره» فایل‌های کامل‌شده را دوباره دانلود نمی‌کند.'; if (e.message === 'لغو شد') aiPhase = 'idle'; }
+    if (ai.ready || aiPhase === 'downloading' || aiPhase === 'loading') return; aiErr = ''; aiNote = ''; aiCrash = null; aiPhase = 'downloading'; ai.dl.reset(); try { const inf = await modelCacheInfo(); ai.dl.seed(inf.list); } catch {} aiSnap = ai.dl.snap(); ai.onProgress = aiProgress; paintDl();
+    try {
+      if (!(aiCache && aiCache.cached)) { flag('download'); await ai.download(); aiCache = await modelCacheInfo(); }
+      flag('load'); aiPhase = 'loading'; aiNote = 'مرحلهٔ ۲: ساخت مدل در حافظه (فایل‌ها یکی‌یکی)…'; paintDl();
+      await ai.load(); flag(null); aiPhase = 'ready'; aiCache = await modelCacheInfo(); aiStore = await storageInfo(); setAiStatus('مدل آماده است ✓'); toast('مدل هوش مصنوعی آماده شد');
+    } catch (e) { flag(null); aiPhase = 'error'; aiErr = e.message === 'لغو شد' ? '' : 'خطا: ' + e.message + ' — «ادامه از همان‌جا» فایل‌های کامل‌شده را دوباره دانلود نمی‌کند.'; if (e.message === 'لغو شد') aiPhase = 'idle'; }
     paintDl(); if (tab === 'ai') renderPane();
   }
   async function aiGenerate() {
@@ -125,6 +130,7 @@ export function boot() {
         (navigator.deviceMemory && navigator.deviceMemory <= 3 && !aiCache?.cached) ? h('div', { class: 'dl-err' }, '⚠ رم این گوشی کم است (≈' + navigator.deviceMemory + ' گیگابایت)؛ ممکن است برنامه هنگام بارگذاری مدل بسته شود. موتور «سرور» مطمئن‌تر است.') : '',
         low ? h('div', { class: 'dl-err' }, `⚠ فضای خالی مرورگر (${fmtBytes(aiStore.free)}) برای مدل کم است؛ جا باز کن.`) : '',
         aiGpu && !aiGpu.ok ? h('div', { class: 'dl-err' }, '✗ ' + aiGpu.why) : '',
+        aiCrash ? h('div', { class: 'dl-err' }, aiCrash === 'download' ? '⚠ بار قبل برنامه وسط «دانلود» بسته شد. دانلود از همان‌جا ادامه دارد؛ اگر دوباره بسته شد، موتور «سرور» را انتخاب کن.' : '⚠ بار قبل برنامه وسط «ساخت مدل در حافظه» بسته شد (فایل‌ها کامل دانلود شده‌اند). یعنی رم گوشی برای این مدل کافی نیست؛ موتور «سرور» (مثلاً Local Dream) مطمئن‌تر است.') : '',
         h('div', { class: 'row', style: 'margin-top:8px' },
           aiPhase === 'downloading' || aiPhase === 'loading' ? h('button', { class: 'btn', onclick: () => { ai.cancel(); aiPhase = 'idle'; aiSnap = null; paintDl(); renderPane(); } }, '⏹ لغو')
             : h('button', { class: 'btn pri', onclick: aiLoad }, aiPhase === 'error' ? '↻ ادامه از همان‌جا' : aiCache?.cached || aiPhase === 'ready' ? '⚡ بارگذاری در حافظه' : aiCache?.partial ? '▶ ادامه دانلود' : '⬇ شروع دانلود'),
