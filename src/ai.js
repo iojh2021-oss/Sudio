@@ -14,7 +14,7 @@ export function scenePrompt(env) {
 export const BIOME_LABEL = (id) => (BIOMES[id] || BIOMES.city).label;
 
 export async function detectWebGPU() {
-  try { if (!navigator.gpu) return { ok: false, why: 'این مرورگر WebGPU ندارد (Chrome/Edge ۱۱۳+ روی اندروید ۱۲+ لازم است)' }; const a = await navigator.gpu.requestAdapter(); if (!a) return { ok: false, why: 'کارت گرافیک سازگار با WebGPU پیدا نشد' }; return { ok: true, f16: a.features.has('shader-f16') }; } catch (e) { return { ok: false, why: String(e.message || e) }; }
+  try { if (!navigator.gpu) return { ok: false, why: 'این مرورگر WebGPU ندارد (Chrome/Edge ۱۱۳+ روی اندروید ۱۲+ لازم است)' }; const a = await navigator.gpu.requestAdapter(); if (!a) return { ok: false, why: 'کارت گرافیک سازگار با WebGPU پیدا نشد' }; const L = a.limits || {}; let info = {}; try { info = a.info || (a.requestAdapterInfo && await a.requestAdapterInfo()) || {}; } catch (e) {} return { ok: true, f16: a.features.has('shader-f16'), maxBuf: L.maxBufferSize || 0, maxStor: L.maxStorageBufferBindingSize || 0, gpu: [info.vendor, info.architecture, info.description].filter(Boolean).join(' '), mem: navigator.deviceMemory || 0 }; } catch (e) { return { ok: false, why: String(e.message || e) }; }
 }
 
 export const fmtBytes = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + ' MB' : Math.round(n / 1e3) + ' KB';

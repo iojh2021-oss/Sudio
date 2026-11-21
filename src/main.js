@@ -129,6 +129,7 @@ export function boot() {
         h('div', { class: 'dlbar' + (aiPhase === 'loading' ? ' busy' : '') }, E.fill), E.nums, E.speed, E.note, E.files, E.err,
         (navigator.deviceMemory && navigator.deviceMemory <= 3 && !aiCache?.cached) ? h('div', { class: 'dl-err' }, '⚠ رم این گوشی کم است (≈' + navigator.deviceMemory + ' گیگابایت)؛ ممکن است برنامه هنگام بارگذاری مدل بسته شود. موتور «سرور» مطمئن‌تر است.') : '',
         low ? h('div', { class: 'dl-err' }, `⚠ فضای خالی مرورگر (${fmtBytes(aiStore.free)}) برای مدل کم است؛ جا باز کن.`) : '',
+        aiGpu && aiGpu.ok ? h('div', { class: 'dl-n', style: 'direction:ltr;text-align:left' }, `shader-f16: ${aiGpu.f16 ? 'YES' : 'NO'} · maxBuffer: ${fmtBytes(aiGpu.maxBuf)} · RAM≈${aiGpu.mem || '?'}GB · ${aiGpu.gpu || 'gpu?'}`) : '',
         aiGpu && !aiGpu.ok ? h('div', { class: 'dl-err' }, '✗ ' + aiGpu.why) : '',
         aiCrash ? h('div', { class: 'dl-err' }, aiCrash === 'download' ? '⚠ بار قبل برنامه وسط «دانلود» بسته شد. دانلود از همان‌جا ادامه دارد؛ اگر دوباره بسته شد، موتور «سرور» را انتخاب کن.' : '⚠ بار قبل برنامه وسط «ساخت مدل در حافظه» بسته شد (فایل‌ها کامل دانلود شده‌اند). یعنی رم گوشی برای این مدل کافی نیست؛ موتور «سرور» (مثلاً Local Dream) مطمئن‌تر است.') : '',
         h('div', { class: 'row', style: 'margin-top:8px' },
