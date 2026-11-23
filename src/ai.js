@@ -62,7 +62,7 @@ export async function storageInfo() {
 }
 
 export class AIBackdrop {
-  constructor() { this.dl = new DownloadTracker(); this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.size = 512; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
+  constructor() { this.dl = new DownloadTracker(); this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.size = 512; this.opencl = false; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
   _w() {
     if (this.worker) return this.worker;
     const w = this.worker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
@@ -93,7 +93,7 @@ export class AIBackdrop {
     catch (e) { throw new Error(e.name === 'AbortError' ? 'پاسخی نیامد (۶ ثانیه)' : 'اتصال برقرار نشد (' + (e.message || e) + ')'); } finally { clearTimeout(t); }
   }
   // Local Dream: POST /generate → جریان SSE؛ رویداد complete تصویر RGB خام (base64) برمی‌گرداند
-  estimateMs() { try { const v = +localStorage.getItem('sudio.ld.t.' + this.size + '.' + this.steps); if (v > 0) return v; } catch {} return Math.max(8000, this.steps * 4000 * Math.pow(this.size / 256, 2)); }
+  estimateMs() { try { const v = +localStorage.getItem('sudio.ld.t.' + this.size + '.' + this.steps); if (v > 0) return v; } catch {} return Math.max(15000, this.steps * 12000 * Math.pow(this.size / 256, 2)); }
   cancelGen() { try { this._ctl && this._ctl.abort('cancel'); } catch {} }
   async _localDream(prompt) {
     const P = (stage, p, extra) => this.onProgress && this.onProgress(Object.assign({ phase: 'gen', stage, p }, extra || {})), base = this.url.replace(/\/+$/, ''), t0 = performance.now();
@@ -101,9 +101,9 @@ export class AIBackdrop {
     try {
       P('connect', 0.02);
       try { const h = await fetch(base + '/health', { signal: ctl.signal }); if (!h.ok) throw new Error('HTTP ' + h.status); } catch (e) { if (ctl.signal.aborted) throw e; throw new Error('Failed to fetch (health)'); }
-      P('send', 0.06);
+      P('send', 0.06); setTimeout(() => P('run', 0.1, { step: 0, total: this.steps }), 700);   // در APK پاسخ تا پایان ساخت نمی‌رسد؛ پس بعد از ارسال، مرحلهٔ «ساخت» است
       const r = await fetch(base + '/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, signal: ctl.signal,
-        body: JSON.stringify({ prompt, negative_prompt: 'people, text, watermark, logo, blurry, low quality', steps: this.steps, cfg: 7.5, size: this.size, scheduler: 'dpm', seed: Math.floor(Math.random() * 2e9) }) });
+        body: JSON.stringify({ prompt, negative_prompt: 'people, text, watermark, logo, blurry, low quality', steps: this.steps, cfg: 7.5, size: this.size, scheduler: 'dpm', use_opencl: !!this.opencl, seed: Math.floor(Math.random() * 2e9) }) });
       if (!r.ok) { let b = ''; try { b = (await r.text()).slice(0, 200); } catch {} throw new Error('پاسخ سرور ' + r.status + (b ? ' ' + b : '')); }
       P('run', 0.1, { step: 0, total: this.steps });
       let img = null, w = 0, h = 0, err = null, buf = '';
