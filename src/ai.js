@@ -62,7 +62,7 @@ export async function storageInfo() {
 }
 
 export class AIBackdrop {
-  constructor() { this.dl = new DownloadTracker(); this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.size = 512; this.opencl = false; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
+  constructor() { this.dl = new DownloadTracker(); this.engine = 'janus'; this.url = 'http://127.0.0.1:7860'; this.size = 512; this.opencl = false; this.onlineBase = 'https://image.pollinations.ai/prompt/'; this.onlineGap = 45000; this.steps = 20; this.worker = null; this.ready = false; this.busy = false; this._id = 0; this._wait = new Map(); this.onProgress = null; }
   _w() {
     if (this.worker) return this.worker;
     const w = this.worker = new Worker(new URL('./ai-worker.js', import.meta.url), { type: 'module' });
@@ -121,6 +121,25 @@ export class AIBackdrop {
       P('done', 1, { w, h, ms: Math.round(performance.now() - t0) }); return blob;
     } catch (e) { throw ctl.signal.aborted ? new Error(ctl.signal.reason === 'cancel' ? 'لغو شد' : 'زمان انتظار تمام شد') : e; } finally { clearTimeout(to); }
   }
+  // آنلاین: Pollinations (رایگان، بدون کلید). تصویر روی سرور ساخته می‌شود؛ هر ۴۵ ثانیه یک تصویر برای هر IP
+  async _online(prompt) {
+    const P = (stage, p, extra) => this.onProgress && this.onProgress(Object.assign({ phase: 'gen', stage, p }, extra || {})), GAP = this.onlineGap, KEY = 'sudio.poll.last';
+    const ctl = this._ctl = new AbortController(), sleep = (ms) => new Promise((res, rej) => { const t = setTimeout(res, ms); ctl.signal.addEventListener('abort', () => { clearTimeout(t); rej(new Error('لغو شد')); }, { once: true }); });
+    let last = 0; try { last = +localStorage.getItem(KEY) || 0; } catch {}
+    while (Date.now() - last < GAP) { const w = Math.ceil((GAP - (Date.now() - last)) / 1000); P('connect', 0.02, { note: `سرویس رایگان هر ۴۵ ثانیه یک تصویر می‌دهد؛ نوبت بعدی تا ${w} ثانیه دیگر` }); await sleep(500); }
+    P('send', 0.08, { note: 'ارسال متن به سرور…' }); setTimeout(() => P('run', 0.12, { step: 0, total: 0 }), 600);
+    const url = this.onlineBase + encodeURIComponent(prompt) + '?width=1024&height=512&nologo=true&safe=true&seed=' + Math.floor(Math.random() * 1e9);
+    try { localStorage.setItem(KEY, String(Date.now())); } catch {}
+    const t0 = performance.now(), img = new Image(); img.crossOrigin = 'anonymous';
+    await new Promise((res, rej) => { const to = setTimeout(() => rej(new GenError('زمان انتظار سرور تمام شد', 'تصویر در ۲ دقیقه نرسید.', ['اینترنت را بررسی کن', 'چند دقیقه بعد دوباره امتحان کن'], url.slice(0, 120))), 120000);
+      ctl.signal.addEventListener('abort', () => { clearTimeout(to); rej(new Error('لغو شد')); }, { once: true });
+      img.onload = () => { clearTimeout(to); res(); };
+      img.onerror = () => { clearTimeout(to); rej(new GenError('تصویر از سرور نرسید', navigator.onLine === false ? 'گوشی به اینترنت وصل نیست.' : 'سرور تصویر نداد یا اتصال به آن مسدود است.', ['اگر کمتر از ۴۵ ثانیه از ساخت قبلی گذشته، سرور درخواست را رد می‌کند؛ کمی صبر کن و دوباره بزن', 'اگر سایت image.pollinations.ai در مرورگر گوشی باز نمی‌شود، فیلتر است؛ VPN را روشن کن', 'متن درخواست را ساده‌تر و کوتاه‌تر کن (ممکن است فیلتر محتوا آن را رد کرده باشد)', 'سرویس رایگان «بدون تضمین» است و گاهی از دسترس خارج می‌شود'], url.slice(0, 160))); };
+      img.src = url; });
+    P('decode', 0.94); const cv = document.createElement('canvas'); cv.width = img.naturalWidth; cv.height = img.naturalHeight; cv.getContext('2d').drawImage(img, 0, 0);
+    const blob = await new Promise((res, rej) => cv.toBlob((b) => b ? res(b) : rej(new Error('تبدیل تصویر ناموفق')), 'image/png'));
+    P('done', 1, { w: cv.width, h: cv.height, ms: Math.round(performance.now() - t0) }); return blob;
+  }
   async generate(prompt) {
     if (this.busy) throw new Error('هنوز تصویر قبلی در حال ساخت است');
     this.busy = true;
@@ -130,6 +149,7 @@ export class AIBackdrop {
     {
       if (this.engine === 'janus') { await this.load(); const m = await this._call({ type: 'generate', prompt }); return m.blob; }
       if (this.engine === 'localdream') return await this._localDream(prompt);
+      if (this.engine === 'online') return await this._online(prompt);
       const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 600000);
       try {
         this.onProgress && this.onProgress({ phase: 'gen', p: .05 });
