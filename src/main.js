@@ -2,7 +2,7 @@ import { Renderer, QUALITY, TIMES } from './renderer.js';
 import { CameraRig } from './camera.js';
 import { Director } from './director.js';
 import { BIOMES, BIOME_IDS } from './biomes.js';
-import { AIBackdrop, scenePrompt, detectWebGPU, modelCacheInfo, clearModelCache, storageInfo, fmtBytes, fmtEta } from './ai.js';
+import { explainGenError, AIBackdrop, scenePrompt, detectWebGPU, modelCacheInfo, clearModelCache, storageInfo, fmtBytes, fmtEta } from './ai.js';
 import { walkState } from './world.js';
 import { PRESETS, hitCharacter, walkTo, rgbToHex, hexToRgb, effectiveColor, HATS } from './character.js';
 import { parsePrompt } from './prompt.js';
@@ -90,7 +90,7 @@ export function boot() {
     E.files.replaceChildren(...sn.files.slice(0, 6).map((f) => { const p = f.total ? Math.round(f.loaded / f.total * 100) : 0; return h('div', { class: 'frow' }, h('span', null, f.name.split('/').pop()), h('i', null, h('b', { style: `width:${f.done ? 100 : p}%` })), h('em', null, f.done ? '✓' : p + '٪')); }));
     E.err.textContent = aiErr; E.note.textContent = aiPhase === 'downloading' ? aiNote : '';
   }
-  function aiProgress(e) { if (e.phase === 'note') { aiNote = e.text; paintDl(); return; } if (e.phase === 'download') { aiSnap = e.snap; aiPhase = e.snap.allDone || e.snap.pct > .995 ? 'loading' : 'downloading'; paintDl(); } else setAiStatus('ساخت تصویر… ' + Math.round(e.p * 100) + '٪'); }
+  function aiProgress(e) { if (e.phase === 'note') { aiNote = e.text; paintDl(); return; } if (e.phase === 'download') { aiSnap = e.snap; aiPhase = e.snap.allDone || e.snap.pct > .995 ? 'loading' : 'downloading'; paintDl(); } else if (e.phase === 'gen') { if (e.stage) gen.stage = e.stage; gen.p = Math.max(gen.p, e.p || 0); if (e.step != null) { gen.step = e.step; gen.total = e.total || gen.total; } if (e.real) gen.real = true; paintGen(); } else setAiStatus('ساخت تصویر… ' + Math.round(e.p * 100) + '٪'); }
   const FLAG = 'sudio.ai.stage', flag = (v) => { try { v ? localStorage.setItem(FLAG, v) : localStorage.removeItem(FLAG); } catch {} }, getFlag = () => { try { return localStorage.getItem(FLAG); } catch { return null; } };
   let aiCrash = getFlag();                                   // اگر مقدار دارد یعنی بار قبل برنامه در همین مرحله بسته شده است
   let aiForce = false, aiPing = '';
@@ -105,16 +105,36 @@ export function boot() {
     } catch (e) { flag(null); aiPhase = 'error'; aiErr = e.message === 'لغو شد' ? '' : 'خطا: ' + e.message + ' — «ادامه از همان‌جا» فایل‌های کامل‌شده را دوباره دانلود نمی‌کند.'; if (e.message === 'لغو شد') aiPhase = 'idle'; }
     paintDl(); if (tab === 'ai') renderPane();
   }
+  // ---- کارت پیشرفت ساخت تصویر ----
+  const STAGES = [['connect', 'اتصال'], ['send', 'ارسال'], ['run', 'ساخت'], ['decode', 'تصویر']];
+  let gen = { on: false, stage: '', p: 0, step: 0, total: 0, t0: 0, est: 0, real: false, err: null, ok: null }, genEls = null, genTimer = 0;
+  const secs = (ms) => Math.round(ms / 1000) + ' ثانیه';
+  function paintGen() {
+    if (!genEls) return; const E = genEls, g = gen, el = g.on ? performance.now() - g.t0 : 0;
+    let p = g.p; if (g.on && g.stage === 'run' && !g.real) p = Math.max(p, Math.min(.9, .1 + .8 * el / Math.max(1000, g.est)));
+    E.card.style.display = g.on || g.err || g.ok ? '' : 'none';
+    E.fill.style.width = Math.round((g.on ? p : g.ok ? 1 : 0) * 100) + '%'; E.bar.className = 'dlbar' + (g.on && g.stage === 'run' ? ' busy' : '');
+    const idx = g.ok ? 4 : STAGES.findIndex((x) => x[0] === g.stage);
+    E.chips.replaceChildren(...STAGES.map((x, k) => h('span', { class: 'chip2 ' + (g.err && k === idx ? 'bad' : k < idx ? 'okc' : k === idx && g.on ? 'loading' : '') }, (k < idx ? '✓ ' : '') + x[1])));
+    if (g.on) { const left = g.stage === 'run' ? Math.max(0, g.est - el) / 1000 : null;
+      E.line.textContent = (g.stage === 'run' ? (g.real ? `گام ${ltr(g.step + ' از ' + g.total)}` : 'در حال ساخت تصویر روی گوشی…') : g.stage === 'connect' ? 'در حال اتصال به سرور…' : g.stage === 'send' ? 'ارسال درخواست…' : 'تبدیل و اعمال تصویر…') + ` · ${secs(el)} گذشته` + (left != null ? ` · حدود ${fmtEta(left)} مانده (تخمین)` : '');
+      E.sub.textContent = g.stage === 'run' ? 'گوشی در حال اجراست؛ Local Dream و Sudio را نبند. در حالت CPU ممکن است چند دقیقه طول بکشد.' : ''; }
+    else if (g.ok) { E.line.textContent = `✓ تصویر ${ltr(g.ok.w + '×' + g.ok.h)} در ${secs(g.ok.ms)} ساخته شد`; E.sub.textContent = ''; }
+    else if (g.err) { E.line.textContent = '✗ ' + g.err.title; E.sub.textContent = ''; } else { E.line.textContent = ''; E.sub.textContent = ''; }
+    E.cancel.style.display = g.on ? '' : 'none';
+    E.err.replaceChildren(); if (g.err && !g.on) { E.err.append(h('div', { class: 'dl-err' }, g.err.reason || ''), ...(g.err.hints && g.err.hints.length ? [h('div', { class: 'dl-n' }, 'چه کار کنم؟'), h('ul', { class: 'hints' }, ...g.err.hints.map((x) => h('li', null, x)))] : []), h('div', { class: 'dl-n', style: 'direction:ltr;text-align:left;opacity:.6;word-break:break-all' }, g.err.tech || ''), h('button', { class: 'btn sm', onclick: aiGenerate }, '↻ تلاش دوباره')); }
+  }
+  function genTick() { clearInterval(genTimer); genTimer = setInterval(() => { if (!gen.on) { clearInterval(genTimer); return; } paintGen(); }, 300); }
   async function aiGenerate() {
     if (ai.busy) { toast('در حال ساخت تصویر…'); return; }
     const prompt = aiTxt.trim() || scenePrompt(D.env); ai.onProgress = aiProgress;
     if (ai.engine === 'janus' && !ai.ready) { await aiLoad(); if (!ai.ready) return; }
-    setAiStatus('شروع ساخت تصویر…');
+    gen = { on: true, stage: 'connect', p: .02, step: 0, total: ai.steps, t0: performance.now(), est: ai.engine === 'localdream' ? ai.estimateMs() : ai.steps * 4000, real: false, err: null, ok: null }; genTick(); paintGen(); setAiStatus('شروع ساخت تصویر…');
     try {
       const blob = await ai.generate(prompt), bmp = await createImageBitmap(blob); renderer.setBackdrop(bmp);
-      if (aiThumb) URL.revokeObjectURL(aiThumb); aiThumb = URL.createObjectURL(blob); aiBlob = blob; setAiStatus('پس‌زمینه اعمال شد ✓'); toast('پس‌زمینهٔ هوش مصنوعی اعمال شد');
-    } catch (e) { setAiStatus('خطا: ' + e.message); toast('خطا: ' + e.message, 5000); }
-    if (tab === 'ai') renderPane();
+      if (aiThumb) URL.revokeObjectURL(aiThumb); aiThumb = URL.createObjectURL(blob); aiBlob = blob; gen.on = false; gen.ok = { w: bmp.width, h: bmp.height, ms: Math.round(performance.now() - gen.t0) }; setAiStatus('پس‌زمینه اعمال شد ✓'); toast('پس‌زمینهٔ هوش مصنوعی اعمال شد');
+    } catch (e) { const x = explainGenError(e, { engine: ai.engine, url: ai.url, size: ai.size, steps: ai.steps }); gen.on = false; gen.err = x; if (x.message === 'ساخت لغو شد') gen.err = null; setAiStatus(x.title); if (gen.err) toast(x.title, 4000); }
+    paintGen(); if (tab === 'ai') renderPane();
   }
   function aiTick() { if (!aiAuto || ai.busy || !D.sel || !(ai.engine !== 'janus' || ai.ready)) return; if (aiLastZ == null) aiLastZ = D.sel.z; if (Math.abs(D.sel.z - aiLastZ) > 60) { aiLastZ = D.sel.z; aiGenerate(); } }
   function paneAI() {
@@ -147,8 +167,10 @@ export function boot() {
       const pg = h('div', { class: 'note' }, aiPing);
       box.append(h('label', null, 'آدرس سرور'), u, h('div', { class: 'row' }, h('button', { class: 'btn', onclick: async () => { pg.textContent = 'در حال تست…'; try { await ai.ping(); aiPing = '✓ سرور پاسخ داد'; } catch (e) { aiPing = '✗ ' + e.message; } pg.textContent = aiPing; } }, '🔌 تست اتصال'), pg), slider('تعداد گام', 1, 50, 1, ai.steps, (v) => { ai.steps = v; }, (v) => v), ...(ai.engine === 'localdream' ? [slider('اندازهٔ تصویر', 256, 768, 64, ai.size, (v) => { ai.size = v; }, (v) => v)] : []), h('p', { class: 'note' }, 'مرورگر باید اجازهٔ دسترسی (CORS) داشته باشد. برای برنامهٔ محلی روی همین گوشی معمولاً آدرس http://127.0.0.1:پورت است.'),
         ai.engine === 'localdream' ? h('p', { class: 'note' }, 'راهنما: ۱) برنامهٔ متن‌باز Local Dream (xororz) را نصب کن. ۲) در آن یک مدل (مثلاً SD1.5) را باز کن و بگذار کامل بارگذاری شود؛ سرور فقط بعد از انتخاب مدل روشن می‌شود و برنامه باید باز بماند. ۳) به Sudio برگرد و «تست اتصال» بزن. اگر مدل NPU است، اندازهٔ تصویر باید با رزولوشن انتخابی در Local Dream یکی باشد؛ در حالت CPU فقط مضرب ۸ لازم است.') : h('p', { class: 'note' }, 'برای رایانه: AUTOMATIC1111 با --api --cors-allow-origins=* یا Forge؛ آدرس IP رایانه در همان Wi-Fi.')); dlEls = { st }; }
+    genEls = { card: h('div', { class: 'dlcard', style: 'display:none;margin-top:8px' }), chips: h('div', { class: 'row', style: 'gap:4px' }), bar: null, fill: h('b'), line: h('div', { class: 'dl-n' }), sub: h('div', { class: 'dl-n', style: 'opacity:.7' }), err: h('div'), cancel: h('button', { class: 'btn sm', onclick: () => { ai.engine === 'localdream' ? ai.cancelGen() : ai.cancel(); } }, '⏹ لغو ساخت') };
+    genEls.bar = h('div', { class: 'dlbar', style: 'margin-top:6px' }, genEls.fill); genEls.card.append(genEls.chips, genEls.bar, genEls.line, genEls.sub, genEls.cancel, genEls.err); setTimeout(paintGen, 0);
     box.append(h('label', null, 'توصیف تصویر (انگلیسی؛ خالی = از روی صحنه ساخته می‌شود)'), ta,
-      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: aiGenerate }, '✨ ساخت پس‌زمینه'), h('button', { class: 'btn', onclick: () => { renderer.clearBackdrop(); setAiStatus('پس‌زمینه حذف شد'); } }, '🧹 حذف پس‌زمینه')), st);
+      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: aiGenerate }, '✨ ساخت پس‌زمینه'), h('button', { class: 'btn', onclick: () => { renderer.clearBackdrop(); setAiStatus('پس‌زمینه حذف شد'); } }, '🧹 حذف پس‌زمینه')), genEls.card, st);
     const chk = h('input', { type: 'checkbox' }); chk.checked = aiAuto; chk.addEventListener('change', () => { aiAuto = chk.checked; aiLastZ = null; });
     box.append(h('label', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px' }, chk, 'ساخت خودکار هر ۶۰ متر راه رفتن'));
     if (aiThumb) box.append(h('img', { src: aiThumb, style: 'width:100%;max-width:260px;border-radius:10px;margin-top:8px' }), h('button', { class: 'btn sm', onclick: () => aiBlob && store.downloadBlob(aiBlob, 'sudio-ai-backdrop.png') }, '💾 ذخیرهٔ تصویر'));

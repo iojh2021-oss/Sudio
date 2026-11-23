@@ -17,6 +17,17 @@ export async function detectWebGPU() {
   try { if (!navigator.gpu) return { ok: false, why: 'این مرورگر WebGPU ندارد (Chrome/Edge ۱۱۳+ روی اندروید ۱۲+ لازم است)' }; const a = await navigator.gpu.requestAdapter(); if (!a) return { ok: false, why: 'کارت گرافیک سازگار با WebGPU پیدا نشد' }; const L = a.limits || {}; let info = {}; try { info = a.info || (a.requestAdapterInfo && await a.requestAdapterInfo()) || {}; } catch (e) {} return { ok: true, f16: a.features.has('shader-f16'), maxBuf: L.maxBufferSize || 0, maxStor: L.maxStorageBufferBindingSize || 0, gpu: [info.vendor, info.architecture, info.description].filter(Boolean).join(' '), mem: navigator.deviceMemory || 0 }; } catch (e) { return { ok: false, why: String(e.message || e) }; }
 }
 
+const LD = 'Local Dream';
+export class GenError extends Error { constructor(title, reason, hints = [], tech = '') { super(title); this.title = title; this.reason = reason; this.hints = hints; this.tech = tech; } }
+export function explainGenError(e, ctx = {}) {
+  if (e instanceof GenError) return e; const m = String(e && e.message || e), tech = `${ctx.engine || ''} · ${ctx.url || ''} · size ${ctx.size || '-'} · steps ${ctx.steps || '-'} · ${m}`;
+  if (/لغو/.test(m)) return new GenError('ساخت لغو شد', 'خودت ساخت را متوقف کردی.', [], tech);
+  if (/Failed to fetch|NetworkError|Load failed|اتصال/.test(m)) return new GenError('اتصال به سرور برقرار نشد', 'برنامه نتوانست به آدرس سرور برسد.', ctx.engine === 'localdream' ? [`${LD} باید باز باشد و مدل در آن بارگذاری شده باشد (صفحهٔ Prompt را ببینی)`, 'آدرس باید دقیقاً http://127.0.0.1:8081 باشد', `${LD} را از لیست برنامه‌ها به کنار نکش؛ در تنظیمات باتری آن را «Unrestricted» کن`, 'اگر تازه APK را عوض کرده‌ای، از نسخهٔ v14 به بعد استفاده کن'] : ['سرور روشن باشد و آدرس درست باشد', 'برای رایانه: همان Wi-Fi و گزینهٔ --cors-allow-origins=*'], tech);
+  if (/زمان انتظار|timeout|AbortError/i.test(m)) return new GenError('زمان انتظار تمام شد', 'سرور در مدت مجاز تصویری نفرستاد.', ['گام‌ها را کم کن (۸ تا ۱۰)', 'اندازهٔ تصویر را کوچک‌تر کن (۲۵۶)', 'گوشی را خنک نگه دار و برنامه‌های دیگر را ببند'], tech);
+  if (/\b400\b|\b500\b|پاسخ سرور/.test(m)) return new GenError('سرور درخواست را رد کرد', 'پاسخ خطا از سرور رسید (' + m + ').', ctx.engine === 'localdream' ? ['اگر مدل NPU است، اندازهٔ تصویر باید با رزولوشن انتخابی در ' + LD + ' یکی باشد', 'در حالت CPU اندازه باید مضرب ۸ باشد (۲۵۶، ۳۸۴، ۵۱۲)', 'مدل را یک بار ببند و دوباره باز کن'] : ['پارامترها و نسخهٔ سرور را بررسی کن'], tech);
+  if (/memory|alloc|OOM|رم/i.test(m)) return new GenError('حافظهٔ گوشی کافی نیست', 'سرور هنگام ساخت حافظه کم آورد.', ['اندازهٔ تصویر را کم کن (۲۵۶)', 'برنامه‌های پس‌زمینه را ببند', 'مدل کوچک‌تر یا حالت CPU انتخاب کن'], tech);
+  return new GenError('ساخت تصویر ناموفق بود', m, ['یک بار «تست اتصال» بزن', 'گام و اندازه را کم کن و دوباره امتحان کن'], tech);
+}
 export const fmtBytes = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + ' MB' : Math.round(n / 1e3) + ' KB';
 export const fmtEta = (s) => s == null || !isFinite(s) ? '—' : s < 60 ? Math.ceil(s) + ' ثانیه' : s < 3600 ? Math.ceil(s / 60) + ' دقیقه' : (s / 3600).toFixed(1) + ' ساعت';
 
@@ -82,26 +93,41 @@ export class AIBackdrop {
     catch (e) { throw new Error(e.name === 'AbortError' ? 'پاسخی نیامد (۶ ثانیه)' : 'اتصال برقرار نشد (' + (e.message || e) + ')'); } finally { clearTimeout(t); }
   }
   // Local Dream: POST /generate → جریان SSE؛ رویداد complete تصویر RGB خام (base64) برمی‌گرداند
+  estimateMs() { try { const v = +localStorage.getItem('sudio.ld.t.' + this.size + '.' + this.steps); if (v > 0) return v; } catch {} return Math.max(8000, this.steps * 4000 * Math.pow(this.size / 256, 2)); }
+  cancelGen() { try { this._ctl && this._ctl.abort('cancel'); } catch {} }
   async _localDream(prompt) {
-    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 900000);
+    const P = (stage, p, extra) => this.onProgress && this.onProgress(Object.assign({ phase: 'gen', stage, p }, extra || {})), base = this.url.replace(/\/+$/, ''), t0 = performance.now();
+    const ctl = this._ctl = new AbortController(), to = setTimeout(() => ctl.abort('timeout'), 900000);
     try {
-      this.onProgress && this.onProgress({ phase: 'gen', p: .05 });
-      const r = await fetch(this.url.replace(/\/+$/, '') + '/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, signal: ctl.signal,
+      P('connect', 0.02);
+      try { const h = await fetch(base + '/health', { signal: ctl.signal }); if (!h.ok) throw new Error('HTTP ' + h.status); } catch (e) { if (ctl.signal.aborted) throw e; throw new Error('Failed to fetch (health)'); }
+      P('send', 0.06);
+      const r = await fetch(base + '/generate', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, signal: ctl.signal,
         body: JSON.stringify({ prompt, negative_prompt: 'people, text, watermark, logo, blurry, low quality', steps: this.steps, cfg: 7.5, size: this.size, scheduler: 'dpm', seed: Math.floor(Math.random() * 2e9) }) });
-      if (!r.ok) throw new Error('پاسخ سرور ' + r.status);
-      const t = await r.text(); let img = null, w = 0, h = 0, err = null;
-      for (const blk of t.split(/\r?\n\r?\n/)) { const d = blk.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join(''); if (!d) continue; let j; try { j = JSON.parse(d); } catch { continue; } if (j.type === 'complete') { img = j.image; w = j.width; h = j.height; } else if (j.type === 'error') err = j.message; }
-      if (err) throw new Error(err); if (!img) { try { const j = JSON.parse(t); if (j.message) throw new Error(j.message); } catch (e) { if (e.message && !/JSON/.test(e.message)) throw e; } throw new Error('Local Dream تصویری برنگرداند'); }
+      if (!r.ok) { let b = ''; try { b = (await r.text()).slice(0, 200); } catch {} throw new Error('پاسخ سرور ' + r.status + (b ? ' ' + b : '')); }
+      P('run', 0.1, { step: 0, total: this.steps });
+      let img = null, w = 0, h = 0, err = null, buf = '';
+      const feed = (chunk) => { buf += chunk; let k; while ((k = buf.search(/\r?\n\r?\n/)) >= 0) { const blk = buf.slice(0, k); buf = buf.slice(k).replace(/^\r?\n\r?\n/, ''); const d = blk.split(/\r?\n/).filter((l) => l.startsWith('data:')).map((l) => l.slice(5).trim()).join(''); if (!d) continue; let j; try { j = JSON.parse(d); } catch { continue; }
+        if (j.type === 'progress') P('run', 0.1 + 0.8 * (j.step / Math.max(1, j.total_steps || this.steps)), { step: j.step, total: j.total_steps || this.steps, real: true }); else if (j.type === 'complete') { img = j.image; w = j.width; h = j.height; } else if (j.type === 'error') err = j.message; } };
+      if (r.body && r.body.getReader) { const rd = r.body.getReader(), dec = new TextDecoder(); for (;;) { const { done, value } = await rd.read(); if (done) break; feed(dec.decode(value, { stream: true })); } feed('\n\n'); }
+      else { const t = await r.text(); feed(t + '\n\n'); if (!img && !err) { try { const j = JSON.parse(t); if (j.message) err = j.message; } catch {} } }
+      if (err) throw new Error('خطای ' + LD + ': ' + err); if (!img) throw new Error(LD + ' تصویری برنگرداند');
+      P('decode', 0.94);
       const bin = atob(img), n = w * h, px = new Uint8ClampedArray(n * 4);
       if (bin.length < n * 3) throw new Error('اندازهٔ تصویر نامعتبر است'); for (let i = 0, j = 0, k = 0; i < n; i++) { px[j++] = bin.charCodeAt(k++); px[j++] = bin.charCodeAt(k++); px[j++] = bin.charCodeAt(k++); px[j++] = 255; }
       const cv = document.createElement('canvas'); cv.width = w; cv.height = h; cv.getContext('2d').putImageData(new ImageData(px, w, h), 0, 0);
-      return await new Promise((res, rej) => cv.toBlob((b) => b ? res(b) : rej(new Error('تبدیل تصویر ناموفق')), 'image/png'));
-    } catch (e) { throw new Error(e.name === 'AbortError' ? 'زمان انتظار تمام شد' : (/Failed to fetch|NetworkError|Load failed/.test(e.message) ? 'اتصال به Local Dream ممکن نشد (برنامه باز و مدل انتخاب‌شده باشد؛ آدرس http://127.0.0.1:8081)' : e.message)); } finally { clearTimeout(to); }
+      const blob = await new Promise((res, rej) => cv.toBlob((b) => b ? res(b) : rej(new Error('تبدیل تصویر ناموفق')), 'image/png'));
+      try { localStorage.setItem('sudio.ld.t.' + this.size + '.' + this.steps, String(Math.round(performance.now() - t0))); } catch {}
+      P('done', 1, { w, h, ms: Math.round(performance.now() - t0) }); return blob;
+    } catch (e) { throw ctl.signal.aborted ? new Error(ctl.signal.reason === 'cancel' ? 'لغو شد' : 'زمان انتظار تمام شد') : e; } finally { clearTimeout(to); }
   }
   async generate(prompt) {
     if (this.busy) throw new Error('هنوز تصویر قبلی در حال ساخت است');
     this.busy = true;
-    try {
+    try { return await this._gen(prompt); } catch (e) { throw explainGenError(e, { engine: this.engine, url: this.url, size: this.size, steps: this.steps }); } finally { this.busy = false; }
+  }
+  async _gen(prompt) {
+    {
       if (this.engine === 'janus') { await this.load(); const m = await this._call({ type: 'generate', prompt }); return m.blob; }
       if (this.engine === 'localdream') return await this._localDream(prompt);
       const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 600000);
@@ -114,6 +140,6 @@ export class AIBackdrop {
         const bin = atob(String(b64).replace(/^data:image\/\w+;base64,/, '')), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
         return new Blob([u], { type: 'image/png' });
       } catch (e) { throw new Error(e.name === 'AbortError' ? 'زمان انتظار سرور تمام شد' : (/Failed to fetch|NetworkError/.test(e.message) ? 'اتصال به سرور ممکن نشد (آدرس، روشن‌بودن سرور و اجازهٔ CORS را بررسی کن)' : e.message)); } finally { clearTimeout(to); }
-    } finally { this.busy = false; }
+    }
   }
 }
