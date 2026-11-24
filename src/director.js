@@ -44,7 +44,7 @@ export class Director {
   }
   toJSON() {
     return { v: SAVE_VERSION, seed: this.seed, env: this.env, duration: this.duration, camera: this.cameraMode, prompt: this.prompt, selected: this.selected, script: this.script,
-      characters: this.characters.map((c) => ({ id: c.id, name: c.name, preset: c.preset, x: +c.x.toFixed(3), z: +c.z.toFixed(3), heading: +c.heading.toFixed(3), speed: c.speed, scale: c.scale, voice: c.voice, colors: c.colors, look: c.look, motion: c.motion, sprite: c.sprite })) };
+      characters: this.characters.map((c) => ({ id: c.id, name: c.name, preset: c.preset, x: +c.x.toFixed(3), z: +c.z.toFixed(3), heading: +c.heading.toFixed(3), speed: c.speed, scale: c.scale, voice: c.voice, colors: c.colors, look: c.look, gait: c.gait, shape: c.shape, sprite: c.sprite })) };
   }
   fromJSON(o) {
     if (!o || typeof o !== 'object') throw new Error('فایل پروژه نامعتبر است');

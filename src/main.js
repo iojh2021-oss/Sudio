@@ -4,8 +4,8 @@ import { Director } from './director.js';
 import { BIOMES, BIOME_IDS } from './biomes.js';
 import { explainGenError, AIBackdrop, scenePrompt, detectWebGPU, modelCacheInfo, clearModelCache, storageInfo, fmtBytes, fmtEta } from './ai.js';
 import { walkState } from './world.js';
-import { PRESETS, hitCharacter, walkTo, rgbToHex, hexToRgb, effectiveColor, HATS, HAIRS, MOTION_STYLES, MOTION_KEYS, motionOf } from './character.js';
-import { PhotoLab, FILTERS, makeSprite } from './photo.js';
+import { PRESETS, hitCharacter, walkTo, rgbToHex, hexToRgb, effectiveColor, HATS, GAIT_STYLES, GAIT_BASE, cleanGait, cleanShape, applyGaitStyle } from './character.js';
+import { spriteFromFile, spriteFromCanvas } from './sprite.js';
 import { parsePrompt } from './prompt.js';
 import { Voice } from './voice.js';
 import { Recorder } from './recorder.js';
@@ -32,8 +32,7 @@ export function boot() {
   const canvas = h('canvas', { id: 'stage' }); document.body.append(canvas);
   let renderer;
   try { renderer = new Renderer(canvas); } catch (e) { document.body.append(h('div', { class: 'splash' }, h('h1', null, 'WebGL2 در دسترس نیست'), h('p', null, e.message + ' — مرورگر را به‌روز کنید یا شتاب سخت‌افزاری را روشن کنید.'))); throw e; }
-  const settings = Object.assign({ quality: 'auto', engine: 'formant', hud: false, hideCity: false }, store.loadSettings());
-  renderer.hideWorld = !!settings.hideCity;
+  const settings = Object.assign({ quality: 'auto', engine: 'formant', hud: false, bgOnly: false, bgY: 0 }, store.loadSettings());
   const cam = new CameraRig(), voice = new Voice(), rec = new Recorder(canvas, voice); voice.engine = settings.engine;
   let subtitle = null, subUntil = 0, toastT = 0, tab = 'prompt', pending = null;
   const toast = (m, ms = 2600) => { const t = $toast; t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms); };
@@ -54,6 +53,7 @@ export function boot() {
   const saved = store.autoload();
   try { if (saved && saved.characters && saved.characters.length) D.fromJSON(saved); else throw 0; } catch (e) { D.prompt = EXAMPLES[0]; D.applyParsed(parsePrompt(D.prompt)); }
   D.snapshotHomes(); cam.mode = D.cameraMode; applyEnv();
+  renderer.bg.only = !!settings.bgOnly; renderer.bg.y = +settings.bgY || 0;
   if (settings.quality !== 'auto') renderer.setQuality(settings.quality); else renderer.setQuality('medium');
 
   // ---------- واسط کاربری ----------
@@ -64,7 +64,7 @@ export function boot() {
   const $stop = h('button', { class: 'btn', onclick: () => D.stopPlayback() }, '⏹');
   const top = h('div', { class: 'top' }, h('div', { class: 't' }, 'Sudio', h('small', null, 'استودیوی شهر سینمایی')), $play, $stop, $cam, $rec);
   const $tabs = h('div', { class: 'tabs' }), $pane = h('div', { class: 'pane' }), $sheet = h('div', { class: 'sheet' });
-  const TABS = [['prompt', '✍ دستور'], ['chars', '🧍 شخصیت‌ها'], ['scene', '🌧 صحنه'], ['ai', '🤖 هوش مصنوعی'], ['photo', '📷 دوربین'], ['time', '🎞 تایم‌لاین'], ['proj', '💾 پروژه']];
+  const TABS = [['prompt', '✍ دستور'], ['chars', '🧍 شخصیت‌ها'], ['scene', '🌧 صحنه'], ['ai', '🤖 هوش مصنوعی'], ['time', '🎞 تایم‌لاین'], ['proj', '💾 پروژه']];
   const handle = h('div', { class: 'handle', onclick: (e) => { if (e.target === handle || e.target.className === 'grip') $sheet.classList.toggle('closed'); } }, h('span', { class: 'grip' }, '⌃'), $tabs);
   $sheet.append(handle, $pane); document.body.append(top, h('div', { class: 'bar' }, $sheet), $sub, $toast, $hud, $prog);
   const setTab = (t) => { tab = t; $sheet.classList.remove('closed'); renderPane(); };
@@ -175,13 +175,66 @@ export function boot() {
     genEls.bar = h('div', { class: 'dlbar', style: 'margin-top:6px' }, genEls.fill); genEls.card.append(genEls.chips, genEls.bar, genEls.line, genEls.sub, genEls.cancel, genEls.err); setTimeout(paintGen, 0);
     box.append(h('label', null, 'توصیف تصویر (انگلیسی؛ خالی = از روی صحنه ساخته می‌شود)'), ta,
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: aiGenerate }, '✨ ساخت پس‌زمینه'), h('button', { class: 'btn', onclick: () => { renderer.clearBackdrop(); setAiStatus('پس‌زمینه حذف شد'); } }, '🧹 حذف پس‌زمینه')), genEls.card, st);
-    const hc = h('input', { type: 'checkbox' }); hc.checked = !!settings.hideCity;
-    hc.addEventListener('change', () => { settings.hideCity = hc.checked; renderer.hideWorld = hc.checked; store.saveSettings(settings); if (hc.checked && !(renderer.ai && renderer.ai.on)) toast('اول یک پس‌زمینه بساز؛ بعد شهر پنهان می‌شود', 3500); });
-    box.append(h('label', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px;color:var(--ink)' }, hc, 'غیرفعال‌کردن شهر پس‌زمینه (فقط تصویر هوش مصنوعی + شخصیت)'));
     const chk = h('input', { type: 'checkbox' }); chk.checked = aiAuto; chk.addEventListener('change', () => { aiAuto = chk.checked; aiLastZ = null; });
     box.append(h('label', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px' }, chk, 'ساخت خودکار هر ۶۰ متر راه رفتن'));
+    // حالت «فقط پس‌زمینهٔ هوش مصنوعی»: شهر/منظرهٔ سه‌بعدی خاموش، تصویر تمام‌صفحه و شخصیت جلوی آن
+    const bgc = h('input', { type: 'checkbox' }); bgc.checked = !!settings.bgOnly; bgc.addEventListener('change', () => { settings.bgOnly = renderer.bg.only = bgc.checked; store.saveSettings(settings); if (bgc.checked && !(renderer.ai && renderer.ai.on)) toast('اول یک تصویر بساز یا بارگذاری کن؛ بعد حالت فقط‌پس‌زمینه دیده می‌شود', 4500); });
+    const up = h('input', { type: 'file', accept: 'image/*', style: 'display:none' }); up.addEventListener('change', async () => { const f = up.files[0]; if (!f) return; try { const bmp = await createImageBitmap(f, { resizeWidth: 2048, resizeQuality: 'medium' }).catch(() => createImageBitmap(f)); renderer.setBackdrop(bmp); toast('تصویر به‌عنوان پس‌زمینه گذاشته شد'); } catch (e) { toast('خواندن تصویر ممکن نشد: ' + e.message, 4000); } up.value = ''; });
+    box.append(h('div', { class: 'dlcard', style: 'margin-top:10px' },
+      h('label', { style: 'display:flex;gap:8px;align-items:center' }, bgc, 'فقط تصویر هوش مصنوعی (شهر و منظرهٔ سه‌بعدی خاموش)'),
+      h('p', { class: 'note' }, 'با روشن‌شدن، فقط تصویر ساخته‌شده پشت شخصیت دیده می‌شود و با راه رفتن آرام حرکت می‌کند. شهر و منظره دست‌نخورده‌اند و با خاموش‌کردن برمی‌گردند.'),
+      slider('ارتفاع افق تصویر', -.3, .3, .01, settings.bgY || 0, (v) => { settings.bgY = renderer.bg.y = v; store.saveSettings(settings); }, (v) => (v > 0 ? '+' : '') + v.toFixed(2)),
+      slider('سرعت حرکت پس‌زمینه', 0, 3, .1, renderer.bg.k, (v) => { renderer.bg.k = v; }, (v) => v.toFixed(1) + '×'),
+      h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => up.click() }, '🖼 بارگذاری تصویر دلخواه'), up)));
     if (aiThumb) box.append(h('img', { src: aiThumb, style: 'width:100%;max-width:260px;border-radius:10px;margin-top:8px' }), h('button', { class: 'btn sm', onclick: () => aiBlob && store.downloadBlob(aiBlob, 'sudio-ai-backdrop.png') }, '💾 ذخیرهٔ تصویر'));
     return box;
+  }
+  // ---- شخصی‌سازی حرکت و تناسب بدن ----
+  function gaitUI(c) {
+    c.gait = c.gait || cleanGait(); c.shape = c.shape || cleanShape(); const G = c.gait, S = c.shape, setG = (k, v) => { G[k] = v; G.style = 'custom'; schedule(); }, f2 = (v) => v.toFixed(2) + '×';
+    return [h('label', null, '🚶 مدل حرکت'),
+      h('div', { class: 'chips' }, Object.entries(GAIT_STYLES).map(([k, st]) => h('button', { class: 'chip' + (G.style === k ? ' on' : ''), onclick: () => { applyGaitStyle(c, k); renderPane(); schedule(); } }, st.label)), h('span', { class: 'chip' + (G.style === 'custom' ? ' on' : '') }, 'سفارشی')),
+      h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => walkTo(c, c.x, c.z - 12, false) }, '🚶 امتحان راه رفتن'), h('button', { class: 'btn sm', onclick: () => walkTo(c, c.x, c.z - 16, true) }, '🏃 امتحان دویدن'), h('button', { class: 'btn sm', onclick: () => { c.path.length = 0; } }, '⏹ ایست')),
+      slider('تندی گام', .4, 2, .05, G.cad, (v) => setG('cad', v), f2), slider('دامنهٔ گام', .2, 1.8, .05, G.amp, (v) => setG('amp', v), f2), slider('پرش بدن', 0, 4, .1, G.bob, (v) => setG('bob', v), f2),
+      slider('تمایل به جلو', 0, 3, .1, G.lean, (v) => setG('lean', v), f2), slider('تاب دست‌ها', 0, 2, .05, G.arm, (v) => setG('arm', v), f2), slider('کج‌شدن/تاب بدن', 0, .3, .01, G.sway, (v) => setG('sway', v), (v) => v.toFixed(2)),
+      slider('خمیدگی (دزدکی)', 0, 1, .05, G.crouch, (v) => setG('crouch', v), (v) => v.toFixed(2)), slider('حرکت رباتی', 0, 1, .05, G.stiff, (v) => setG('stiff', v), (v) => v.toFixed(2)), slider('ضریب سرعت دویدن', 1.4, 3.6, .1, G.run, (v) => setG('run', v), f2),
+      h('label', null, '🧍 تناسب بدن'),
+      slider('اندازهٔ سر', .6, 1.8, .05, S.head, (v) => { S.head = v; schedule(); }, f2), slider('طول پاها', .7, 1.4, .05, S.legs, (v) => { S.legs = v; schedule(); }, f2),
+      slider('طول دست‌ها', .6, 1.5, .05, S.arms, (v) => { S.arms = v; schedule(); }, f2), slider('پهنای تنه', .7, 1.4, .05, S.torso, (v) => { S.torso = v; schedule(); }, f2),
+      h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => { c.gait = cleanGait(); c.shape = cleanShape(); renderPane(); schedule(); } }, '↺ حرکت و تناسب پیش‌فرض'))];
+  }
+  // ---- کاراکتر تصویری: آپلود عکس یا طراحی با انگشت ----
+  let spBg = true;
+  function spriteUI(c) {
+    const up = h('input', { type: 'file', accept: 'image/*', style: 'display:none' }), els = [h('label', null, '🖼 کاراکتر تصویری (آپلود یا طراحی)')];
+    up.addEventListener('change', async () => { const f = up.files[0]; if (!f) return; try { c.sprite = await spriteFromFile(f, spBg); toast(c.sprite.cleared ? 'کاراکتر ساخته شد (پس‌زمینه حذف شد)' : 'کاراکتر ساخته شد'); renderPane(); schedule(); } catch (e) { toast('ناموفق: ' + e.message, 5000); } up.value = ''; });
+    const bg = h('input', { type: 'checkbox' }); bg.checked = spBg; bg.addEventListener('change', () => { spBg = bg.checked; });
+    els.push(h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => up.click() }, '📤 آپلود تصویر کاراکتر'), h('button', { class: 'btn', onclick: () => openPad(c) }, '✏️ طراحی با انگشت'), up),
+      h('label', { style: 'display:flex;gap:8px;align-items:center;font-size:12px' }, bg, 'حذف خودکار پس‌زمینهٔ ساده هنگام آپلود (عکس PNG شفاف هم قبول است)'));
+    if (c.sprite) els.push(h('div', { class: 'dlcard' }, h('img', { src: c.sprite.data, style: 'height:90px;image-rendering:auto;background:repeating-conic-gradient(#2a3441 0 25%,#1c2430 0 50%) 50%/16px 16px;border-radius:8px' }),
+      slider('اندازهٔ کاراکتر', .4, 2.5, .05, c.sprite.size, (v) => { c.sprite.size = v; schedule(); }, (v) => v.toFixed(2) + '×'),
+      (() => { const m = h('input', { type: 'checkbox' }); m.checked = c.sprite.mirror !== 0; m.addEventListener('change', () => { c.sprite.mirror = m.checked ? 1 : 0; schedule(); }); return h('label', { style: 'display:flex;gap:8px;align-items:center;font-size:12px' }, m, 'برگشتن تصویر هنگام راه رفتن به چپ (فرض: تصویر رو به راست است)'); })(),
+      h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => openPad(c) }, '✏️ ویرایش نقاشی'), h('button', { class: 'btn sm', onclick: () => { c.sprite = null; renderPane(); schedule(); } }, '↩ بازگشت به کاراکتر سه‌بعدی'))));
+    return els;
+  }
+  function openPad(c) {
+    const W = 360, Hh = 480, cv = h('canvas', { width: W, height: Hh, class: 'padc' }), ctx = cv.getContext('2d', { willReadFrequently: true }); ctx.lineCap = ctx.lineJoin = 'round';
+    let color = '#c0392b', size = 8, erase = false, down = false, last = null; const undo = [];
+    const snap = () => { undo.push(ctx.getImageData(0, 0, W, Hh)); if (undo.length > 20) undo.shift(); };
+    if (c.sprite) { const im = new Image(); im.onload = () => { const k = Math.min((W - 40) / im.width, (Hh - 40) / im.height); ctx.drawImage(im, (W - im.width * k) / 2, (Hh - im.height * k) / 2, im.width * k, im.height * k); }; im.src = c.sprite.data; }
+    const pt = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * Hh / r.height]; };
+    const line = (a, b) => { ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over'; ctx.strokeStyle = ctx.fillStyle = color; ctx.lineWidth = size; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); };
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); cv.setPointerCapture(e.pointerId); snap(); down = true; last = pt(e); line(last, [last[0] + .01, last[1]]); });
+    cv.addEventListener('pointermove', (e) => { if (!down) return; e.preventDefault(); const p = pt(e); line(last, p); last = p; });
+    const end = () => { down = false; }; cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+    const close = () => ov.remove(), col = h('input', { type: 'color', value: color }), sz = h('input', { type: 'range', min: 2, max: 40, value: size, style: 'width:90px' }), eb = h('button', { class: 'btn sm' }, '🩹 پاک‌کن');
+    col.addEventListener('input', () => { color = col.value; erase = false; eb.classList.remove('pri'); }); sz.addEventListener('input', () => { size = +sz.value; });
+    eb.addEventListener('click', () => { erase = !erase; eb.classList.toggle('pri', erase); });
+    const ov = h('div', { class: 'padov' }, h('div', { class: 'padbox' },
+      h('div', { class: 'padhd' }, 'طراحی کاراکتر: کامل بکش؛ پا پایین بوم و رو به راست'), cv,
+      h('div', { class: 'row', style: 'align-items:center' }, col, sz, eb, h('button', { class: 'btn sm', onclick: () => { const s = undo.pop(); if (s) { ctx.globalCompositeOperation = 'source-over'; ctx.putImageData(s, 0, 0); } } }, '↶'), h('button', { class: 'btn sm', onclick: () => { snap(); ctx.clearRect(0, 0, W, Hh); } }, '🗑')),
+      h('div', { class: 'row' }, h('button', { class: 'btn pri', onclick: () => { try { c.sprite = spriteFromCanvas(cv); close(); renderPane(); schedule(); toast('کاراکتر نقاشی ثبت شد'); } catch (e) { toast('ثبت نشد: ' + e.message, 4500); } } }, '✓ ثبت کاراکتر'), h('button', { class: 'btn', onclick: close }, '✕ بستن'))));
+    document.body.append(ov);
   }
   function paneChars() {
     const c = D.sel, box = h('div');
@@ -200,94 +253,12 @@ export function boot() {
       slider('عرض بدن', .7, 1.5, .05, (c.look && c.look.width) || 1, (v) => { c.look = { ...(c.look || {}), width: v }; schedule(); }, (v) => v.toFixed(2) + '×'),
       h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => { c.colors = null; c.look = {}; renderPane(); schedule(); } }, '↺ ظاهر نقش'),
         h('button', { class: 'btn sm', onclick: () => { const r = () => [Math.random(), Math.random(), Math.random()].map((n) => .08 + n * .8); c.colors = { coat: r(), pants: r(), hair: r(), hat: r(), scarf: r(), shoes: [.05, .05, .06] }; renderPane(); schedule(); } }, '🎲 ظاهر تصادفی'),
-        h('button', { class: 'btn sm', onclick: () => { const n = D.addCharacter({ preset: c.preset, name: c.name + ' ۲', colors: c.colors && JSON.parse(JSON.stringify(c.colors)), look: { ...(c.look || {}) }, motion: c.motion && { ...c.motion }, sprite: c.sprite && { ...c.sprite }, voice: { ...c.voice }, scale: c.scale, speed: c.speed }); D.snapshotHomes(); toast('کپی ساخته شد'); renderPane(); } }, '⧉ کپی')),
+        h('button', { class: 'btn sm', onclick: () => { const n = D.addCharacter({ preset: c.preset, name: c.name + ' ۲', colors: c.colors && JSON.parse(JSON.stringify(c.colors)), look: { ...(c.look || {}) }, voice: { ...c.voice }, scale: c.scale, speed: c.speed, gait: c.gait && { ...c.gait }, shape: c.shape && { ...c.shape }, sprite: c.sprite && { ...c.sprite } }); D.snapshotHomes(); toast('کپی ساخته شد'); renderPane(); } }, '⧉ کپی')),
       slider('سرعت راه رفتن', .6, 3, .1, c.speed, (v) => { c.speed = v; schedule(); }, (v) => v.toFixed(1) + ' m/s'), slider('اندازه', .5, 1.6, .05, c.scale, (v) => { c.scale = v; schedule(); }, (v) => v.toFixed(2) + '×'),
-      ...charExtras(c),
+      ...gaitUI(c), ...spriteUI(c),
       h('label', null, 'گفتن'), h('div', { class: 'row' }, say, h('button', { class: 'btn pri', onclick: doSay }, '🗣 بگو')),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', onclick: () => { D.addEvent({ t: +D.time.toFixed(1), who: c.id, type: 'say', text: say.value.trim() || 'سلام' }); toast('دیالوگ به تایم‌لاین اضافه شد'); } }, '＋ افزودن دیالوگ به تایم‌لاین'), h('button', { class: 'btn', onclick: () => { if (confirm('این شخصیت حذف شود؟')) D.removeCharacter(c.id); } }, '🗑 حذف')),
       h('p', { class: 'note' }, 'برای حرکت: روی خیابان لمس کن تا شخصیت انتخاب‌شده بروید، روی خود شخصیت بزن تا انتخاب شود، یا از جوی‌استیک/کلیدهای W A S D استفاده کن. با دو انگشت زوم و با کشیدن چرخش دوربین.'));
-    return box;
-  }
-  // ——— شخصیت: طراحی، سبک حرکت، آپلود ———
-  const openSec = new Set(), spriteOrig = new Map(), spriteTol = new Map();
-  const sect = (id, title, ...kids) => { const d = h('details', { class: 'sec' }, h('summary', null, title), ...kids); if (openSec.has(id)) d.open = true; d.addEventListener('toggle', () => { d.open ? openSec.add(id) : openSec.delete(id); }); return d; };
-  const setLook = (c, k, v) => { c.look = { ...(c.look || {}) }; if (v === '' || v == null) delete c.look[k]; else c.look[k] = v; schedule(); };
-  const check = (label, on, set) => { const i = h('input', { type: 'checkbox' }); i.checked = !!on; i.addEventListener('change', () => set(i.checked)); return h('label', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;font-size:13px;color:var(--ink)' }, i, label); };
-  const MOT = { stride: ['طول گام', 0, 2, .05], arms: ['تاب دست‌ها', 0, 2.5, .05], bounce: ['جهش بدن', 0, 4, .1], lean: ['خم‌شدن به جلو', -.3, .6, .02], sway: ['تاب چپ‌وراست', 0, .5, .02], cadence: ['سرعت گام‌برداری', .4, 2, .05] };
-  async function spriteFrom(c, bmp) { const tol = spriteTol.get(c.id) ?? .22, r = makeSprite(bmp, tol); c.sprite = { h: 1.8, ...(c.sprite || {}), src: r.src }; return r; }
-  async function uploadChar(file) {
-    if (!file) return; const c = D.sel;
-    try {
-      if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif)$/i.test(file.name)) {
-        if (!c) { toast('اول یک شخصیت اضافه کن'); return; }
-        const bmp = await createImageBitmap(file); spriteOrig.set(c.id, bmp); const r = await spriteFrom(c, bmp);
-        toast(r.opaque ? 'تصویر اعمال شد؛ پس‌زمینهٔ یک‌رنگ خودکار پاک شد (با نوار «حساسیت» تنظیم کن)' : 'تصویر شفاف (PNG) اعمال شد', 4200);
-      } else {
-        const o = JSON.parse(await store.readFileText(file)), list = o && o.kind === 'sudio-character' ? [o.character] : Array.isArray(o && o.characters) ? o.characters : null;
-        if (!list || !list.length) throw new Error('فایل کاراکتر نیست'); let n = 0;
-        for (const ch of list.slice(0, 4)) { const { id, x, z, heading, ...rest } = ch || {}; D.addCharacter(rest); n++; } D.snapshotHomes(); toast(n + ' کاراکتر وارد شد');
-      }
-    } catch (e) { toast('خطا: ' + e.message, 4000); }
-    schedule(); renderPane();
-  }
-  function charExtras(c) {
-    const L = c.look || {}, fileIn = h('input', { type: 'file', accept: 'image/*,.json,application/json', style: 'display:none' }), camIn = h('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
-    fileIn.addEventListener('change', () => { uploadChar(fileIn.files[0]); fileIn.value = ''; }); camIn.addEventListener('change', () => { uploadChar(camIn.files[0]); camIn.value = ''; });
-    const colorIn = ([k, l]) => { const i = h('input', { type: 'color', value: rgbToHex(effectiveColor(c, k)) }); i.addEventListener('input', () => { c.colors = { ...(c.colors || {}), [k]: hexToRgb(i.value) }; schedule(); }); return h('div', { class: 'cc' }, h('span', null, l), i); };
-    const design = sect('design', '🎨 طراحی کاراکتر',
-      h('div', { class: 'row' }, h('div', null, h('label', null, 'مدل مو'), select(HAIRS, L.hairStyle || '', (v) => setLook(c, 'hairStyle', v)))),
-      slider('اندازهٔ سر', .75, 1.5, .05, L.headSize || 1, (v) => setLook(c, 'headSize', v), (v) => v.toFixed(2) + '×'),
-      slider('طول پا', .8, 1.35, .05, L.legs || 1, (v) => setLook(c, 'legs', v), (v) => v.toFixed(2) + '×'),
-      slider('طول دست', .8, 1.35, .05, L.arms || 1, (v) => setLook(c, 'arms', v), (v) => v.toFixed(2) + '×'),
-      h('div', { class: 'row3', style: 'margin-top:6px' }, [['eyes', 'چشم'], ['accent', 'لوازم']].map(colorIn)),
-      check('عینک', L.glasses, (on) => setLook(c, 'glasses', on ? 1 : null)), check('ریش', L.beard, (on) => setLook(c, 'beard', on ? 1 : null)), check('کوله‌پشتی', L.backpack, (on) => setLook(c, 'backpack', on ? 1 : null)), check('شنل', L.cape, (on) => setLook(c, 'cape', on ? 1 : null)), check('چشم‌های نورانی', L.glow, (on) => setLook(c, 'glow', on ? 1 : null)),
-      h('button', { class: 'btn sm', style: 'margin-top:8px', onclick: () => { const r = (a, b) => a + Math.random() * (b - a), pick = (a) => a[(Math.random() * a.length) | 0]; c.look = { ...(c.look || {}), headSize: +r(.85, 1.3).toFixed(2), legs: +r(.9, 1.25).toFixed(2), arms: +r(.9, 1.25).toFixed(2), hairStyle: pick(['short', 'bun', 'mohawk', 'afro', 'bald']) }; for (const k of ['glasses', 'beard', 'backpack', 'cape']) { if (Math.random() < .35) c.look[k] = 1; else delete c.look[k]; } c.colors = { ...(c.colors || {}), eyes: [r(.05, .9), r(.05, .9), r(.05, .9)], accent: [r(.1, 1), r(.1, 1), r(.1, 1)] }; renderPane(); schedule(); } }, '🎲 طراحی تصادفی'));
-    const mo = motionOf(c);
-    const motion = sect('motion', '🚶 سبک حرکت',
-      h('label', null, 'سبک'), select(Object.entries(MOTION_STYLES).map(([k, v]) => [k, v.label]), (c.motion && c.motion.style) || 'normal', (v) => { c.motion = v === 'normal' ? null : { style: v }; renderPane(); schedule(); }),
-      ...MOTION_KEYS.map((k) => slider(MOT[k][0], MOT[k][1], MOT[k][2], MOT[k][3], +mo[k].toFixed(3), (v) => { c.motion = { ...(c.motion || {}), [k]: v }; schedule(); }, (v) => v.toFixed(2))),
-      h('button', { class: 'btn sm', style: 'margin-top:8px', onclick: () => { c.motion = null; renderPane(); schedule(); } }, '↺ حرکت عادی'));
-    const sp = c.sprite;
-    const upload = sect('upload', '📤 آپلود / خروجی کاراکتر',
-      h('p', { class: 'note' }, 'عکس (ترجیحاً PNG شفاف یا پس‌زمینهٔ یک‌رنگ) آپلود کن تا به‌صورت شخصیت راه‌رونده در صحنه بیاید؛ یا فایل کاراکتر (JSON) وارد کن.'),
-      h('div', { class: 'row' }, h('button', { class: 'btn pri', onclick: () => fileIn.click() }, '📂 انتخاب تصویر / فایل'), h('button', { class: 'btn', onclick: () => camIn.click() }, '📸 عکس با دوربین'), fileIn, camIn),
-      sp ? h('div', null,
-        slider('قد تصویر', .5, 3.5, .05, sp.h, (v) => { c.sprite = { ...c.sprite, h: v }; schedule(); }, (v) => v.toFixed(2) + ' m'),
-        spriteOrig.has(c.id) ? slider('حساسیت حذف پس‌زمینه', 0, .6, .02, spriteTol.get(c.id) ?? .22, (v) => { spriteTol.set(c.id, v); }, (v) => v ? v.toFixed(2) : 'خاموش') : '',
-        spriteOrig.has(c.id) ? h('button', { class: 'btn sm', onclick: async () => { await spriteFrom(c, spriteOrig.get(c.id)); schedule(); renderPane(); } }, '↻ اعمال حساسیت') : '',
-        check('تصویر اصلی رو به چپ است', sp.faceLeft, (on) => { c.sprite = { ...c.sprite, faceLeft: on }; schedule(); }),
-        h('button', { class: 'btn sm', style: 'margin-top:6px', onclick: () => { c.sprite = null; spriteOrig.delete(c.id); renderPane(); schedule(); } }, '🗑 حذف تصویر (بازگشت به مدل سه‌بعدی)')) : '',
-      h('button', { class: 'btn', style: 'margin-top:8px', onclick: () => { const j = D.toJSON().characters.find((x) => x.id === c.id); if (j) { store.downloadJSON({ kind: 'sudio-character', v: 1, character: j }, (c.name || 'character') + '.sudio-char.json'); toast('فایل کاراکتر ذخیره شد'); } } }, '💾 خروجی کاراکتر (JSON)'));
-    return [design, motion, upload];
-  }
-  // ——— دوربین و فیلتر عکس ———
-  let lab = null; const photoMsg = { t: '' };
-  function ensureLab() { if (lab) return lab; try { lab = new PhotoLab(h('canvas', { class: 'photocv' })); } catch (e) { toast('خطا: ' + e.message, 4000); } return lab; }
-  const camErr = (e) => e && e.message === 'NOCAM' ? 'دوربین در این مرورگر/آدرس در دسترس نیست (نیاز به https). از «عکس با برنامهٔ دوربین» استفاده کن.' : e && e.name === 'NotAllowedError' ? 'اجازهٔ دوربین داده نشد؛ در تنظیمات مرورگر/برنامه اجازه بده.' : 'خطای دوربین: ' + (e && e.message);
-  function panePhoto() {
-    const L = ensureLab(), box = h('div'); if (!L) return box.appendChild(h('p', { class: 'note' }, 'WebGL2 برای فیلتر عکس در دسترس نیست.')) && box;
-    const loadFile = async (f) => { if (!f) return; try { L.stopCamera(); L.p.mirror = 0; L.setSource(await createImageBitmap(f, { imageOrientation: 'from-image' })); } catch (e) { toast('خطا: ' + e.message, 4000); } renderPane(); };
-    const fIn = h('input', { type: 'file', accept: 'image/*', style: 'display:none' }), cIn = h('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
-    fIn.addEventListener('change', () => { loadFile(fIn.files[0]); fIn.value = ''; }); cIn.addEventListener('change', () => { loadFile(cIn.files[0]); cIn.value = ''; });
-    const chips = h('div', { class: 'chips', style: 'margin-top:8px' }), paint = () => chips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('on', b.dataset.k === L.p.filter));
-    FILTERS.forEach((f) => chips.append(h('button', { class: 'chip' + (L.p.filter === f.id ? ' on' : ''), 'data-k': f.id, onclick: () => { L.p.filter = f.id; paint(); L.render(); } }, f.label)));
-    box.append(L.canvas,
-      h('div', { class: 'row', style: 'margin-top:8px' },
-        h('button', { class: 'btn' + (L.live ? ' rec' : ' pri'), onclick: async () => { if (L.live) { L.stopCamera(); } else { try { await L.startCamera(L.facing); } catch (e) { toast(camErr(e), 5000); } } renderPane(); } }, L.live ? '⏹ خاموش‌کردن دوربین' : '📷 روشن‌کردن دوربین'),
-        h('button', { class: 'btn', onclick: async () => { if (!L.live) { toast('اول دوربین را روشن کن'); return; } try { await L.startCamera(L.facing === 'user' ? 'environment' : 'user'); } catch (e) { toast(camErr(e), 5000); } renderPane(); } }, '🔄 چرخش'),
-        h('button', { class: 'btn go', onclick: async () => { if (!L.live) { toast('اول دوربین را روشن کن'); return; } await L.capture(); toast('عکس گرفته شد؛ فیلتر را انتخاب کن'); renderPane(); } }, '📸 عکس')),
-      h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', onclick: () => fIn.click() }, '🖼 انتخاب عکس'), h('button', { class: 'btn', onclick: () => cIn.click() }, '📸 با برنامهٔ دوربین گوشی'), fIn, cIn),
-      chips,
-      slider('شدت فیلتر', 0, 1, .02, L.p.amt, (v) => { L.p.amt = v; L.render(); }, (v) => Math.round(v * 100) + '٪'),
-      slider('وضوح (شارپ)', 0, 1, .02, L.p.clar, (v) => { L.p.clar = v; L.render(); }, (v) => Math.round(v * 100) + '٪'),
-      slider('روشنایی', -.4, .4, .02, L.p.bri, (v) => { L.p.bri = v; L.render(); }, (v) => v.toFixed(2)),
-      slider('کنتراست', .5, 1.8, .02, L.p.con, (v) => { L.p.con = v; L.render(); }, (v) => v.toFixed(2) + '×'),
-      check('وارونه افقی (آینه)', L.p.mirror, (on) => { L.p.mirror = on ? 1 : 0; L.render(); }),
-      h('div', { class: 'row', style: 'margin-top:8px' },
-        h('button', { class: 'btn pri', onclick: async () => { if (!L.hasSource) { toast('اول عکس بگیر یا انتخاب کن'); return; } const b = await L.toBlob(); b && store.downloadBlob(b, 'sudio-photo.png'); } }, '💾 ذخیره با کیفیت کامل'),
-        h('button', { class: 'btn', onclick: async () => { if (!L.hasSource) { toast('اول عکس بگیر یا انتخاب کن'); return; } renderer.setBackdrop(await L.getBitmap()); toast('عکس به‌عنوان پس‌زمینهٔ صحنه اعمال شد (در تب هوش مصنوعی شهر را غیرفعال کن)', 4500); } }, '🌆 پس‌زمینهٔ صحنه')),
-      h('p', { class: 'note' }, 'فیلترها روی GPU و با همان رزولوشن عکس اصلی (تا ۴۰۹۶ پیکسل) اعمال می‌شوند و خروجی PNG بدون فشرده‌سازی تلفاتی است.'));
-    if (!L.hasSource) box.insertBefore(h('p', { class: 'note' }, 'دوربین را روشن کن یا عکسی انتخاب کن.'), L.canvas.nextSibling);
     return box;
   }
   function panePrompt() {
@@ -327,7 +298,7 @@ export function boot() {
       h('p', { class: 'note' }, rec.supported ? 'ضبط، تصویر و صدای گفتار را با هم می‌گیرد و پس از پایان نمایش ' + (rec.mime.includes('mp4') ? 'MP4' : 'WebM') + ' ذخیره می‌کند.' : 'این مرورگر ضبط ویدیو را پشتیبانی نمی‌کند؛ از «عکس» استفاده کن.'),
       h('div', { class: 'row', style: 'margin-top:8px' }, h('button', { class: 'btn', onclick: () => { if (confirm('همهٔ پروژه پاک و صحنهٔ نمونه ساخته شود؟')) { D.prompt = EXAMPLES[0]; D.applyParsed(parsePrompt(D.prompt)); D.snapshotHomes(); } } }, '🆕 پروژهٔ تازه')));
   }
-  function renderPane() { $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.k === tab)); if (tab !== 'photo' && lab) lab.stopCamera(); const f = { prompt: panePrompt, ai: paneAI, photo: panePhoto, chars: paneChars, scene: paneScene, time: paneTime, proj: paneProj }[tab]; const y = $pane.scrollTop; $pane.replaceChildren(f()); $pane.scrollTop = y; paintDl(); }
+  function renderPane() { $tabs.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.k === tab)); const f = { prompt: panePrompt, ai: paneAI, chars: paneChars, scene: paneScene, time: paneTime, proj: paneProj }[tab]; const y = $pane.scrollTop; $pane.replaceChildren(f()); $pane.scrollTop = y; paintDl(); }
   async function finishRecording() { const r = await rec.stop(); $rec.classList.remove('rec'); $rec.textContent = '⏺ ضبط'; if (r) { store.downloadBlob(r.blob, 'sudio-video.' + r.ext); toast('ویدیو ذخیره شد (' + (r.blob.size / 1e6).toFixed(1) + ' MB)', 4000); } renderPane(); }
   function toggleRecord() {
     if (rec.recording) { D.pause(); finishRecording(); return; }
@@ -370,7 +341,7 @@ export function boot() {
 
   // ---------- حلقهٔ اصلی + کیفیت تطبیقی ----------
   let last = performance.now(), t = 0, ema = 16, lowFor = 0, highFor = 0;
-  const frameState = () => ({ camera: cam.state(), characters: D.characters, t });
+  const frameState = () => ({ camera: cam.state(), characters: D.characters, t, selected: D.selected });
   function frame(now) {
     const dtr = (now - last) / 1000; last = now; const dt = clamp(dtr, 0, .1); t += dt; ema += ((dtr * 1000) - ema) * .08;
     try {

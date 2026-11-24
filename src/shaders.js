@@ -98,7 +98,7 @@ void main(){
 export const SKY_VS = `#version 300 es
 out vec2 v_ndc; void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); v_ndc=p*2.-1.; gl_Position=vec4(v_ndc,1.,1.); }`;
 export const SKY_FS = COMMON + `
-in vec2 v_ndc; uniform mat4 u_invVP; uniform float u_cloud, u_stars, u_aiOn, u_aiMix, u_aiYaw, u_aiFull; uniform sampler2D u_ai0, u_ai1; out vec4 o;
+in vec2 v_ndc; uniform mat4 u_invVP; uniform float u_cloud, u_stars, u_aiOn, u_aiMix, u_aiYaw; uniform sampler2D u_ai0, u_ai1; out vec4 o;
 void main(){
   vec4 a=u_invVP*vec4(v_ndc,1.,1.); vec3 d=normalize(a.xyz/a.w-u_cam); float h=d.y;
   vec3 c=mix(u_hor,u_zen,pow(clamp(h,0.,1.),.5));
@@ -106,14 +106,32 @@ void main(){
   c+=u_glow*.25*exp(-abs(h)*9.);
   if(h>0.){ vec2 q=d.xz/(h+.22)*1.3+vec2(u_time*.012,0.); float cl=smoothstep(.35,.85,fbm(q)); c=mix(c,c*1.45+u_hor*.35,cl*u_cloud); float s=step(.9972,h21(floor(d.xz/(h+.1)*220.)))*u_stars*(1.-cl); c+=vec3(s)*.8; }
   if(u_aiOn>.5){
-    float az=atan(d.x,-d.z)/1.22+.5+u_aiYaw; float u=1.-abs(1.-2.*fract(az*.5)); float v=.42+1.29*h; if(u_aiFull>.5) v=max(v,.012);
+    float az=atan(d.x,-d.z)/1.22+.5+u_aiYaw; float u=1.-abs(1.-2.*fract(az*.5)); float v=.42+1.29*h;
     if(v>0.&&v<1.){ vec2 uv=vec2(u,1.-v); vec3 t=mix(texture(u_ai0,uv).rgb,texture(u_ai1,uv).rgb,u_aiMix);
-      float lum=clamp(dot(u_amb,vec3(.333))*1.9,.22,1.05); lum=mix(lum,1.,u_aiFull*.8); float a=mix(smoothstep(0.,.07,v),1.,u_aiFull)*smoothstep(1.,.9,v);
-      c=mix(c,t*lum,a*mix(.95,1.,u_aiFull)); if(u_aiFull>.5&&h<0.) c*=1.-.4*(1.-smoothstep(-.7,0.,h)); }
+      float lum=clamp(dot(u_amb,vec3(.333))*1.9,.22,1.05); float a=smoothstep(0.,.07,v)*smoothstep(1.,.9,v);
+      c=mix(c,t*lum,a*.95); }
   }
-  c=mix(c,fogColor(d),smoothstep(.35,0.,h)*.8*(1.-.85*u_aiFull));
+  c=mix(c,fogColor(d),smoothstep(.35,0.,h)*.8);
   o=vec4(grade(c),1.);
 }`;
+// حالت «فقط پس‌زمینهٔ هوش مصنوعی»: تصویر تمام‌صفحه (cover) با پارالاکس افقی هنگام راه رفتن
+export const BG_FS = COMMON + `
+in vec2 v_ndc; uniform float u_aiMix, u_scroll, u_asp, u_imgAsp, u_yoff, u_lum; uniform sampler2D u_ai0, u_ai1; out vec4 o;
+void main(){
+  vec2 uv=v_ndc*.5+.5; vec2 s=u_asp>u_imgAsp?vec2(1.,u_imgAsp/u_asp):vec2(u_asp/u_imgAsp,1.);
+  vec2 q=(uv-.5)*s+.5; q.y+=u_yoff*s.y; q.y=clamp(q.y,0.,1.);
+  float x=q.x+u_scroll; q.x=1.-abs(1.-2.*fract(x*.5));
+  vec2 t=vec2(q.x,1.-q.y); vec3 c=mix(texture(u_ai0,t).rgb,texture(u_ai1,t).rgb,u_aiMix)*u_lum;
+  o=vec4(grade(c),1.);
+}`;
+// کاراکتر تصویری: بیلبورد استوانه‌ای رو به دوربین با آلفا
+export const SPR_VS = `#version 300 es
+uniform mat4 u_vp; uniform vec3 u_base, u_right; uniform vec2 u_size; uniform float u_flip, u_tilt, u_xf, u_sy; out vec2 v_uv; out vec3 v_wp;
+void main(){ vec2 c=vec2(float(gl_VertexID&1), float((gl_VertexID>>1)&1)); float x=(c.x-.5)*u_size.x*u_xf, y=c.y*u_size.y*u_sy; float ct=cos(u_tilt), st=sin(u_tilt); vec2 r=vec2(x*ct-y*st, x*st+y*ct);
+  vec3 w=u_base+u_right*r.x+vec3(0.,r.y,0.); v_wp=w; v_uv=vec2(c.x,1.-c.y); gl_Position=u_vp*vec4(w.x,w.y*u_flip,w.z,1.); }`;
+export const SPR_FS = COMMON + `
+in vec2 v_uv; in vec3 v_wp; uniform sampler2D u_tex; uniform float u_lamp; out vec4 o;
+void main(){ vec4 t=texture(u_tex,v_uv); if(t.a<.04) discard; vec3 light=u_amb*1.9+u_sun*.8+u_glow*.25+.12+vec3(1.,.7,.42)*u_lamp*.18; vec3 c=t.rgb*light; c=applyFog(c,vec3(v_wp.x,abs(v_wp.y),v_wp.z)); o=vec4(grade(c),t.a); }`;
 export const PT_VS = `#version 300 es
 layout(location=0) in vec3 a_p; layout(location=1) in vec3 a_c; layout(location=2) in vec2 a_s; uniform mat4 u_vp; uniform float u_flip, u_scale, u_time; uniform vec3 u_camP;
 out vec3 v_c; out float v_a;
@@ -150,19 +168,3 @@ void main(){
   vec3 c=u_col*light; if(u_emis>0.) c=u_col*u_emis;
   c=applyFog(c,vec3(v_wp.x,abs(v_wp.y),v_wp.z)); o=vec4(grade(c),1.);
 }`;
-
-export const SHD_VS = `#version 300 es
-layout(location=0) in vec2 a_p; uniform mat4 u_vp; uniform vec3 u_c; out vec2 v_q;
-void main(){ v_q=a_p; vec3 wp=vec3(u_c.x+a_p.x*u_c.z*1.6,.02,u_c.y+a_p.y*u_c.z*1.6); gl_Position=u_vp*vec4(wp,1.); }`;
-export const SHD_FS = `#version 300 es
-precision highp float; in vec2 v_q; out vec4 o;
-void main(){ float r=dot(v_q,v_q); if(r>1.) discard; o=vec4(0.,0.,0.,.5*exp(-r*3.5)); }`;
-export const SPR_VS = `#version 300 es
-layout(location=0) in vec2 a_p; uniform mat4 u_vp; uniform vec3 u_base, u_right; uniform vec2 u_half; uniform float u_flip, u_tilt, u_sq;
-out vec2 v_uv; out vec3 v_wp;
-void main(){ float yy=a_p.y*.5+.5; vec3 wp=u_base+u_right*(a_p.x*u_half.x+u_tilt*yy*u_half.y); wp.y=u_base.y+yy*u_half.y*u_sq; v_wp=wp; v_uv=vec2(a_p.x*.5+.5,1.-yy); gl_Position=u_vp*vec4(wp.x,wp.y*u_flip,wp.z,1.); }`;
-export const SPR_FS = COMMON + `
-in vec2 v_uv; in vec3 v_wp; uniform sampler2D u_tex; uniform float u_lamp; out vec4 o;
-void main(){ vec4 t=texture(u_tex,v_uv); if(t.a<.04) discard;
-  vec3 light=u_amb*1.8+u_sun*.55+u_glow*.06+vec3(1.,.7,.42)*u_lamp*.12; vec3 c=t.rgb*light;
-  c=applyFog(c,vec3(v_wp.x,abs(v_wp.y),v_wp.z)); o=vec4(grade(c),t.a); }`;
