@@ -32,7 +32,7 @@ export function boot() {
   const canvas = h('canvas', { id: 'stage' }); document.body.append(canvas);
   let renderer;
   try { renderer = new Renderer(canvas); } catch (e) { document.body.append(h('div', { class: 'splash' }, h('h1', null, 'WebGL2 در دسترس نیست'), h('p', null, e.message + ' — مرورگر را به‌روز کنید یا شتاب سخت‌افزاری را روشن کنید.'))); throw e; }
-  const settings = Object.assign({ quality: 'auto', engine: 'formant', hud: false, bgOnly: false, bgY: 0 }, store.loadSettings());
+  const settings = Object.assign({ quality: 'auto', engine: 'formant', hud: false, bgOnly: false, bgH: null, bgW: 6 }, store.loadSettings());
   const cam = new CameraRig(), voice = new Voice(), rec = new Recorder(canvas, voice); voice.engine = settings.engine;
   let subtitle = null, subUntil = 0, toastT = 0, tab = 'prompt', pending = null;
   const toast = (m, ms = 2600) => { const t = $toast; t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms); };
@@ -53,7 +53,7 @@ export function boot() {
   const saved = store.autoload();
   try { if (saved && saved.characters && saved.characters.length) D.fromJSON(saved); else throw 0; } catch (e) { D.prompt = EXAMPLES[0]; D.applyParsed(parsePrompt(D.prompt)); }
   D.snapshotHomes(); cam.mode = D.cameraMode; applyEnv();
-  renderer.bg.only = !!settings.bgOnly; renderer.bg.y = +settings.bgY || 0;
+  renderer.bg.only = !!settings.bgOnly; renderer.bg.h = settings.bgH != null ? +settings.bgH : null; renderer.bg.w = +settings.bgW || 6;
   if (settings.quality !== 'auto') renderer.setQuality(settings.quality); else renderer.setQuality('medium');
 
   // ---------- واسط کاربری ----------
@@ -183,7 +183,8 @@ export function boot() {
     box.append(h('div', { class: 'dlcard', style: 'margin-top:10px' },
       h('label', { style: 'display:flex;gap:8px;align-items:center' }, bgc, 'فقط تصویر هوش مصنوعی (شهر و منظرهٔ سه‌بعدی خاموش)'),
       h('p', { class: 'note' }, 'با روشن‌شدن، فقط تصویر ساخته‌شده پشت شخصیت دیده می‌شود و با راه رفتن آرام حرکت می‌کند. شهر و منظره دست‌نخورده‌اند و با خاموش‌کردن برمی‌گردند.'),
-      slider('ارتفاع افق تصویر', -.3, .3, .01, settings.bgY || 0, (v) => { settings.bgY = renderer.bg.y = v; store.saveSettings(settings); }, (v) => (v > 0 ? '+' : '') + v.toFixed(2)),
+      slider('خط افق در تصویر (۰=بالا)', .25, .8, .01, renderer.bg.h ?? (renderer.ai && renderer.ai.hAuto) ?? .5, (v) => { settings.bgH = renderer.bg.h = v; store.saveSettings(settings); }, (v) => v.toFixed(2)),
+      slider('مقیاس زمین (عرض تصویر روی زمین، متر)', 2, 14, .5, renderer.bg.w, (v) => { settings.bgW = renderer.bg.w = v; store.saveSettings(settings); }, (v) => v.toFixed(1)),
       slider('سرعت حرکت پس‌زمینه', 0, 3, .1, renderer.bg.k, (v) => { renderer.bg.k = v; }, (v) => v.toFixed(1) + '×'),
       h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => up.click() }, '🖼 بارگذاری تصویر دلخواه'), up)));
     if (aiThumb) box.append(h('img', { src: aiThumb, style: 'width:100%;max-width:260px;border-radius:10px;margin-top:8px' }), h('button', { class: 'btn sm', onclick: () => aiBlob && store.downloadBlob(aiBlob, 'sudio-ai-backdrop.png') }, '💾 ذخیرهٔ تصویر'));

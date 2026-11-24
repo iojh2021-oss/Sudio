@@ -114,15 +114,28 @@ void main(){
   c=mix(c,fogColor(d),smoothstep(.35,0.,h)*.8);
   o=vec4(grade(c),1.);
 }`;
-// حالت «فقط پس‌زمینهٔ هوش مصنوعی»: تصویر تمام‌صفحه (cover) با پارالاکس افقی هنگام راه رفتن
-export const BG_FS = COMMON + `
-in vec2 v_ndc; uniform float u_aiMix, u_scroll, u_asp, u_imgAsp, u_yoff, u_lum; uniform sampler2D u_ai0, u_ai1; out vec4 o;
+// حالت «فقط پس‌زمینهٔ هوش مصنوعی»: نیمهٔ بالای عکس = افق دور (روی صفحه، هم‌تراز با افق واقعی دوربین)؛ نیمهٔ پایین = زمین سه‌بعدی با پرسپکتیو درست
+const BG_COMMON = `
+uniform float u_aiMix, u_hI; uniform sampler2D u_ai0, u_ai1;
+vec3 samp(vec2 t){ return mix(texture(u_ai0,t).rgb,texture(u_ai1,t).rgb,u_aiMix); }
+vec3 hazeAt(){ float r=clamp(u_hI-.02,0.,1.); vec3 s=vec3(0.); for(int i=0;i<5;i++) s+=samp(vec2(.1+.2*float(i),r)); return s/5.; }
+float mir(float x,float p){ float m=mod(x,2.*p); return m<p?m:2.*p-m; }`;
+export const BG_FS = COMMON + BG_COMMON + `
+in vec2 v_ndc; uniform float u_scroll, u_asp, u_imgAsp, u_yh, u_lum; out vec4 o;
 void main(){
-  vec2 uv=v_ndc*.5+.5; vec2 s=u_asp>u_imgAsp?vec2(1.,u_imgAsp/u_asp):vec2(u_asp/u_imgAsp,1.);
-  vec2 q=(uv-.5)*s+.5; q.y+=u_yoff*s.y; q.y=clamp(q.y,0.,1.);
-  float x=q.x+u_scroll; q.x=1.-abs(1.-2.*fract(x*.5));
-  vec2 t=vec2(q.x,1.-q.y); vec3 c=mix(texture(u_ai0,t).rgb,texture(u_ai1,t).rgb,u_aiMix)*u_lum;
+  vec2 uv=v_ndc*.5+.5; float dy=uv.y-u_yh;
+  float S=max(u_asp/u_imgAsp,(1.-u_yh)/max(u_hI,.05)), row=u_hI-dy/S, hw=u_asp/(u_imgAsp*S);
+  float x=.5+(uv.x-.5)*hw+u_scroll+u_time*.0012; float u=mir(x,1.);
+  vec3 c=samp(vec2(u,clamp(row,0.,1.)))*u_lum, hz=hazeAt()*u_lum;
+  c=mix(c,hz,smoothstep(.07,0.,abs(dy))*.6);
   o=vec4(grade(c),1.);
+}`;
+export const GIMG_FS = COMMON + BG_COMMON + `
+in vec3 v_wp; uniform float u_d0, u_wb, u_lum; out vec4 o;
+void main(){
+  float L=40., d=u_d0+mir(-v_wp.z,L); float y=u_hI+(1.-u_hI)*u_d0/d; float u=mir(.5+(v_wp.x/u_wb)*(u_d0/d),1.);
+  vec3 c=samp(vec2(u,y))*u_lum, hz=hazeAt()*u_lum; float dc=length(v_wp-u_cam); float f=1.-exp(-pow(dc*.02,1.4));
+  c=mix(c,hz,clamp(f,0.,1.)); o=vec4(grade(c),1.);
 }`;
 // کاراکتر تصویری: بیلبورد استوانه‌ای رو به دوربین با آلفا
 export const SPR_VS = `#version 300 es
