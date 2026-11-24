@@ -3,7 +3,7 @@ import { persp, lookAt, mul, inv, ident, scale as mScale } from './mat.js';
 import * as SH from './shaders.js';
 import { makeAnyChunk, BIOMES } from './biomes.js';
 import { movingCars, carBoxes, chunkIndex, STRIDE, CH } from './world.js';
-import { characterParts } from './character.js';
+import { characterParts, motionOf } from './character.js';
 import { clamp, lerp, smooth } from './util.js';
 
 const PAL = {
@@ -59,6 +59,7 @@ export class Renderer {
     this.sphereVAO = gl.createVertexArray(); gl.bindVertexArray(this.sphereVAO); gl.bindBuffer(gl.ARRAY_BUFFER, this.sphere); this._geoAttr(); gl.bindVertexArray(null);
     this.vp = ident(); this.invVP = ident(); this.camPos = [0, 3, 0]; this.mirror = ident();
     this.env = { time: 'night', rain: .6, fog: .5, mood: 'noir' }; this.cur = null; this.genBudget = 2;
+    this.hideWorld = false; this.sprites = new Map(); this._lp = {}; this._dt = .016; this._lastT = null;   // hideWorld: شهر/ساختمان/خیابان پنهان؛ فقط تصویر هوش مصنوعی + شخصیت
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; }); canvas.addEventListener('webglcontextrestored', () => { location.reload(); });
   }
   _vbo(data) { const gl = this.gl, b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return b; }
@@ -77,6 +78,25 @@ export class Renderer {
     if (!this.rainVAO) this.rainVAO = gl.createVertexArray(); gl.bindVertexArray(this.rainVAO); gl.bindBuffer(gl.ARRAY_BUFFER, this.rainBuf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0); gl.bindVertexArray(null); this.rainN = n;
   }
   setQuality(name) { const q = QUALITY[name]; if (!q) return; this.qName = name; this.q = { ...q }; this.scale = q.scale; this._rainBuild(q.rain); this.resize(); }
+  // برنامه‌های شیدر اضافه (سایهٔ نرم زیر شخصیت و شخصیت تصویری) فقط هنگام نیاز ساخته می‌شوند؛ خطا هیچ‌وقت صحنهٔ اصلی را خراب نمی‌کند
+  _lazy(name) {
+    if (this._lp[name] !== undefined) return this._lp[name];
+    try { this._lp[name] = prog(this.gl, SH[name.toUpperCase() + '_VS'], SH[name.toUpperCase() + '_FS']); } catch (e) { console.warn('shader ' + name, e); this._lp[name] = null; }
+    return this._lp[name];
+  }
+  // تصویر آپلودشدهٔ شخصیت → بافت (بارگذاری ناهمزمان؛ تا آماده‌شدن، شخصیت سه‌بعدی نشان داده می‌شود)
+  getSprite(src) {
+    let e = this.sprites.get(src); if (e) return e.ready ? e : null;
+    e = { tex: null, ready: false, w: 1, h: 1 }; this.sprites.set(src, e);
+    if (this.sprites.size > 24) { const k = this.sprites.keys().next().value; const o = this.sprites.get(k); if (o && o.tex) this.gl.deleteTexture(o.tex); this.sprites.delete(k); }
+    const img = new Image(); img.onload = () => {
+      const gl = this.gl; e.tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, e.tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      e.w = img.naturalWidth || 1; e.h = img.naturalHeight || 1; e.ready = true;
+    };
+    img.onerror = () => { e.bad = true; }; img.src = src; return null;
+  }
   setBackdrop(src) {                                  // تصویر هوش مصنوعی (ImageBitmap/Canvas/Image) به‌عنوان پس‌زمینهٔ دور؛ با محو‌شدن جایگزین می‌شود
     const gl = this.gl; if (!this.ai) { this.ai = { tex: [gl.createTexture(), gl.createTexture()], on: 0, t0: -9, yaw: 0 }; }
     const a = this.ai; a.tex.reverse();
@@ -129,28 +149,33 @@ export class Renderer {
     const W = this.canvas.width, H = this.canvas.height, pal = this._palette(), now = t;
     this.camPos = camera.pos.slice();
     const asp = W / H, fovEff = asp < .8 ? camera.fov * (1 + (.8 - asp) * .75) : camera.fov, proj = persp(Math.min(fovEff, 92) * Math.PI / 180, asp, .3, 900), view = lookAt(camera.pos, camera.target, [0, 1, 0]);
-    this.vp = mul(proj, view); this.invVP = inv(this.vp); this._stream(camera.pos[2], now);
+    this.vp = mul(proj, view); this.invVP = inv(this.vp);
+    const hw = !!(this.hideWorld && this.ai && this.ai.on);   // فقط وقتی پس‌زمینهٔ هوش مصنوعی هست شهر پنهان می‌شود
+    this._dt = this._lastT == null ? .016 : clamp(t - this._lastT, 0, .1); this._lastT = t;
+    if (hw) pal.sat = 1; else this._stream(camera.pos[2], now);
     gl.viewport(0, 0, W, H); gl.clearColor(pal.hor[0] * .5, pal.hor[1] * .5, pal.hor[2] * .5, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     this.stats.draws = 0;
     // آسمان
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
     let P = this.P.sky; gl.useProgram(P.p); this._common(P, pal); gl.uniformMatrix4fv(P.u.u_invVP, false, this.invVP); gl.uniform1f(P.u.u_cloud, pal.cloud); gl.uniform1f(P.u.u_stars, pal.stars);
-    { const a = this.ai, on = a && a.on ? 1 : 0; gl.uniform1f(P.u.u_aiOn, on); if (on) { gl.uniform1f(P.u.u_aiMix, clamp((t - a.t0) / 3, 0, 1)); gl.uniform1f(P.u.u_aiYaw, 0); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a.tex[0]); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, a.tex[1]); gl.uniform1i(P.u.u_ai0, 0); gl.uniform1i(P.u.u_ai1, 1); gl.activeTexture(gl.TEXTURE0); } }
+    { const a = this.ai, on = a && a.on ? 1 : 0; gl.uniform1f(P.u.u_aiOn, on); if (on) { gl.uniform1f(P.u.u_aiMix, clamp((t - a.t0) / 3, 0, 1)); gl.uniform1f(P.u.u_aiYaw, hw ? camera.pos[0] * .004 + camera.pos[2] * .001 : 0); gl.uniform1f(P.u.u_aiFull, hw ? 1 : 0); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, a.tex[0]); gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, a.tex[1]); gl.uniform1i(P.u.u_ai0, 0); gl.uniform1i(P.u.u_ai1, 1); gl.activeTexture(gl.TEXTURE0); } }
     gl.bindVertexArray(this.emptyVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     // ماشین‌های متحرک + چراغ‌ها
-    const zMin = camera.pos[2] - this.q.view * CH, zMax = camera.pos[2] + 40, cars = (pal.biome.id === 'city') ? movingCars(this.seed, t, zMin, zMax, this.env.traffic ?? 1) : [], cb = [];
+    const zMin = camera.pos[2] - this.q.view * CH, zMax = camera.pos[2] + 40, cars = (!hw && pal.biome.id === 'city') ? movingCars(this.seed, t, zMin, zMax, this.env.traffic ?? 1) : [], cb = [];
     for (const c of cars) carBoxes(cb, c.x, c.z, c.head, c.hv);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.carBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cb), gl.DYNAMIC_DRAW); const carCount = cb.length / STRIDE;
-    const pts = this._points(cars, pal);
-    const mirrorPass = this.q.reflect && (pal.wet > .08 || pal.biome.water);
-    if (mirrorPass) { gl.frontFace(gl.CW); this._scene(-1, pal, characters, carCount, now, pts, true); gl.frontFace(gl.CCW); }
+    const pts = hw ? 0 : this._points(cars, pal);
+    const mirrorPass = !hw && this.q.reflect && (pal.wet > .08 || pal.biome.water);
+    if (mirrorPass) { gl.frontFace(gl.CW); this._scene(-1, pal, characters, carCount, now, pts, true, false); gl.frontFace(gl.CCW); }
+    if (!hw) {
     // زمین (نیمه‌شفاف تا بازتاب پیدا باشد)
     P = this.P.ground; gl.useProgram(P.p); this._common(P, pal); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform2f(P.u.u_ctr, camera.pos[0], camera.pos[2]);
     { const B = pal.biome, g = B.g1 || [0, 0, 0]; gl.uniform1f(P.u.u_biome, B.n); gl.uniform1f(P.u.u_water, B.water || 0); gl.uniform3f(P.u.u_g1, ...g); gl.uniform3f(P.u.u_g2, ...(B.g2 || g)); gl.uniform3f(P.u.u_gp, ...(B.path || g)); }
     if (mirrorPass) { gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); } else { gl.disable(gl.BLEND); gl.uniform1f(P.u.u_wet, pal.wet * .4); }
     gl.disable(gl.CULL_FACE); gl.bindVertexArray(this.groundVAO); gl.drawArrays(gl.TRIANGLES, 0, 6); gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
-    this._scene(1, pal, characters, carCount, now, pts, false);
+    } else this._shadows(characters);
+    this._scene(1, pal, characters, carCount, now, pts, false, hw);
     // باران
     if (pal.rain > .05) {
       P = this.P.rain; gl.useProgram(P.p); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform3f(P.u.u_cam, ...camera.pos); gl.uniform1f(P.u.u_time, t); gl.uniform1f(P.u.u_len, .9 + pal.rain * .6);
@@ -168,18 +193,19 @@ export class Renderer {
     for (const c of cars) { const f = c.head === 0 ? -1 : 1; put(c.x - .7, 1.12, c.z + f * 1.95, 1, .93, .7, 13, 0); put(c.x + .7, 1.12, c.z + f * 1.95, 1, .93, .7, 13, 0); put(c.x - .55, 1, c.z - f * 2.3, .95, .07, .04, 5, 0); put(c.x + .55, 1, c.z - f * 2.3, .95, .07, .04, 5, 0); }
     return i / 8;
   }
-  _scene(flip, pal, characters, carCount, now, nPts, mirror) {
+  _scene(flip, pal, characters, carCount, now, nPts, mirror, hw) {
     const gl = this.gl; let P = this.P.box; gl.useProgram(P.p); this._common(P, pal);
     const vp = flip < 0 ? this.vp : this.vp; gl.uniformMatrix4fv(P.u.u_vp, false, vp); gl.uniform1f(P.u.u_flip, flip);
     const dayLit = this.env.time === 'day' ? .0 : 1; void dayLit;
-    for (const c of this.chunks.values()) {
+    if (!hw) for (const c of this.chunks.values()) {
       const rev = clamp((now - c.born) / 1.6, 0, 1); gl.uniform1f(P.u.u_reveal, smooth(rev) * 1.0 + (rev >= 1 ? 1 : 0));
       gl.bindVertexArray(c.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, c.d.count); this.stats.draws++;
     }
-    gl.uniform1f(P.u.u_reveal, 1); if (carCount) { gl.bindVertexArray(this.carVAO); gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, carCount); this.stats.draws++; }
+    gl.uniform1f(P.u.u_reveal, 1); if (!hw && carCount) { gl.bindVertexArray(this.carVAO); gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, carCount); this.stats.draws++; }
     // شخصیت‌ها
     P = this.P.chr; gl.useProgram(P.p); this._common(P, pal); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform1f(P.u.u_flip, flip);
     for (const ch of characters) {
+      if (ch.sprite && ch.sprite.src && this._drawSprite(ch, flip, pal)) { gl.useProgram(P.p); continue; }
       const parts = characterParts(ch, this.t);
       for (const p of parts) { gl.uniformMatrix4fv(P.u.u_model, false, p.m); gl.uniform3f(P.u.u_col, p.c[0], p.c[1], p.c[2]); gl.uniform1f(P.u.u_emis, p.e || 0);
         if (p.s) { gl.bindVertexArray(this.sphereVAO); gl.drawArrays(gl.TRIANGLES, 0, this.sphereN); } else { gl.bindVertexArray(this.cubeVAO); gl.drawArrays(gl.TRIANGLES, 0, 36); } this.stats.draws++; }
@@ -190,6 +216,31 @@ export class Renderer {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.ptBuf); gl.bufferData(gl.ARRAY_BUFFER, this.ptData.subarray(0, nPts * 8), gl.DYNAMIC_DRAW);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.bindVertexArray(this.ptVAO); gl.drawArrays(gl.POINTS, 0, nPts); gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
     }
+  }
+  // سایهٔ نرم زیر شخصیت‌ها وقتی خیابان پنهان است (تا شخصیت در هوا معلق دیده نشود)
+  _shadows(characters) {
+    const gl = this.gl, P = this._lazy('shd'); if (!P) return;
+    gl.useProgram(P.p); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.bindVertexArray(this.groundVAO);
+    for (const ch of characters) { const r = .62 * ch.scale * ((ch.look && ch.look.width) || 1) * (ch.sprite && ch.sprite.src ? 1.1 : 1); gl.uniform3f(P.u.u_c, ch.x, ch.z, r); gl.drawArrays(gl.TRIANGLES, 0, 6); this.stats.draws++; }
+    gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+  }
+  // شخصیت تصویری (بیلبورد استوانه‌ای رو به دوربین) با انیمیشن پرش/کج‌شدن هنگام راه رفتن؛ true = رسم شد
+  _drawSprite(ch, flip, pal) {
+    const sp = ch.sprite, tx = this.getSprite(sp.src); if (!tx) return false;
+    const P = this._lazy('spr'); if (!P) return false; const gl = this.gl, mo = motionOf(ch);
+    let cx = this.camPos[0] - ch.x, cz = this.camPos[2] - ch.z; const l = Math.hypot(cx, cz) || 1; cx /= l; cz /= l;
+    const rx = cz, rz = -cx, vr = ch.vx * rx + ch.vz * rz, sp0 = Math.hypot(ch.vx, ch.vz);
+    if (ch._sprF == null) ch._sprF = 1;
+    if (sp0 > .15 && Math.abs(vr) > sp0 * .25) ch._sprF = vr > 0 ? 1 : -1;
+    const want = ch._sprF * (sp.faceLeft ? -1 : 1); ch._sprX = (ch._sprX == null ? want : ch._sprX) + (want - (ch._sprX == null ? want : ch._sprX)) * clamp(this._dt * 14, 0, 1);
+    const g = ch._gait, run = ch.state === 'run' ? 1.5 : 1, ph = ch.phase, H = (sp.h || 1.8) * ch.scale, aspect = tx.w / tx.h;
+    const bob = Math.abs(Math.sin(ph)) * .06 * g * run * mo.bounce * H / 1.8, tilt = Math.sin(ph) * (.07 * mo.stride + .5 * mo.sway) * g * run, talk = ch.talk * (.03 + Math.sin(this.t * 9) * .02), idle = Math.sin(this.t * 1.8 + ch.x) * .012 * (1 - g);
+    gl.useProgram(P.p); this._common(P, pal); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform1f(P.u.u_flip, flip);
+    gl.uniform3f(P.u.u_base, ch.x, bob, ch.z); gl.uniform3f(P.u.u_right, rx, 0, rz); gl.uniform2f(P.u.u_half, H * aspect * .5 * ch._sprX, H);
+    gl.uniform1f(P.u.u_tilt, tilt * (ch._sprX < 0 ? -1 : 1)); gl.uniform1f(P.u.u_sq, 1 + talk + idle); gl.uniform1f(P.u.u_lamp, pal.lamp);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx.tex); gl.uniform1i(P.u.u_tex, 0);
+    gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.bindVertexArray(this.groundVAO); gl.drawArrays(gl.TRIANGLES, 0, 6); this.stats.draws++;
+    gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE); return true;
   }
   screenToGround(nx, ny) { return null; }
 }

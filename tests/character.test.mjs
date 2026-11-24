@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { makeCharacter, characterParts, stepCharacter, motionOf } from '../src/character.js';
+import { Director } from '../src/director.js';
+const base = characterParts(makeCharacter({ preset: 'woman' }), 0).length;
+const c = makeCharacter({ preset: 'woman', look: { glasses: 1, beard: 1, backpack: 1, cape: 1, hairStyle: 'bun', headSize: 9, bogus: 1 }, motion: { style: 'drunk', cadence: 99 }, sprite: { src: 'data:image/png;base64,AAA', h: 99 } });
+assert.ok(characterParts(c, 0).length > base, 'accessories add parts'); assert.equal(c.look.headSize, 1.5); assert.equal(c.look.bogus, undefined);
+assert.equal(motionOf(c).cadence, 2); assert.equal(c.sprite.h, 5); assert.equal(makeCharacter({ sprite: { src: 'http://x' } }).sprite, null);
+const d = new Director(); d.addCharacter({ preset: 'robot', motion: { style: 'sneak' }, look: { cape: 1 } }); const e = new Director(); e.fromJSON(JSON.parse(JSON.stringify(d.toJSON())));
+assert.equal(e.characters[0].motion.style, 'sneak'); assert.equal(e.characters[0].look.cape, 1);
+console.log('character ok');
