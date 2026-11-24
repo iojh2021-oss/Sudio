@@ -4,6 +4,7 @@ import * as SH from './shaders.js';
 import { makeAnyChunk, BIOMES } from './biomes.js';
 import { movingCars, carBoxes, chunkIndex, STRIDE, CH } from './world.js';
 import { characterParts, gaitOf } from './character.js';
+import { extraParts } from './extras.js';
 import { clamp, lerp, smooth } from './util.js';
 
 const PAL = {
@@ -41,7 +42,7 @@ export class Renderer {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: !!opts.preserve });
     if (!gl) throw new Error('WebGL2 در این دستگاه پشتیبانی نمی‌شود');
     this.gl = gl; this.canvas = canvas; this.q = { ...QUALITY.medium }; this.qName = 'medium'; this.scale = this.q.scale;
-    this.chunks = new Map(); this.seed = 20261120; this.district = 'auto'; this.litMul = 1; this.t = 0; this.rainOn = 0; this.bg = { only: false, h: null, w: 6, k: 1 }; this.stats = { chunks: 0, draws: 0, gen: 0 };
+    this.chunks = new Map(); this.seed = 20261120; this.district = 'auto'; this.litMul = 1; this.t = 0; this.rainOn = 0; this.bg = { only: false, h: null, w: 6, k: 1, traffic: true }; this.stats = { chunks: 0, draws: 0, gen: 0 };
     this.P = {
       box: prog(gl, SH.BOX_VS, SH.BOX_FS), ground: prog(gl, SH.GROUND_VS, SH.GROUND_FS), sky: prog(gl, SH.SKY_VS, SH.SKY_FS), bg: prog(gl, SH.SKY_VS, SH.BG_FS), gimg: prog(gl, SH.GROUND_VS, SH.GIMG_FS), pt: prog(gl, SH.PT_VS, SH.PT_FS),
       rain: prog(gl, SH.RAIN_VS, SH.RAIN_FS), post: prog(gl, SH.POST_VS, SH.POST_FS), chr: prog(gl, SH.CHAR_VS, SH.CHAR_FS), spr: prog(gl, SH.SPR_VS, SH.SPR_FS),
@@ -86,7 +87,7 @@ export class Renderer {
     a.on = 1; a.t0 = this.t; a.asp = (src.width || src.naturalWidth || 2) / (src.height || src.naturalHeight || 1);
     try { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, 64, 64); const d = x.getImageData(0, 0, 64, 64).data, m = new Float32Array(64);
       for (let r = 0; r < 64; r++) { let sum = 0; for (let q = 0; q < 64; q++) { const i = (r * 64 + q) * 4; sum += d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11; } m[r] = sum / 64; }
-      let best = 0, bi = 35; for (let r = 14; r < 52; r++) { const g = Math.abs(m[r + 2] - m[r - 2]) * (1 - Math.abs(r / 64 - .5) * .6); if (g > best) { best = g; bi = r; } } a.hAuto = clamp(bi / 64, .25, .8); } catch (e) { a.hAuto = .5; }
+      let best = 0, bi = 35; for (let r = 14; r < 52; r++) { const g = Math.abs(m[r + 2] - m[r - 2]) * (1 - Math.abs(r / 64 - .5) * .6); if (g > best) { best = g; bi = r; } } a.hAuto = clamp(bi / 64, .25, .8); let gr = 0, gg = 0, gb = 0; for (let r = 50; r < 64; r++) for (let q = 0; q < 64; q++) { const i = (r * 64 + q) * 4; gr += d[i]; gg += d[i + 1]; gb += d[i + 2]; } a.gc = [gr / 896 / 255, gg / 896 / 255, gb / 896 / 255]; } catch (e) { a.hAuto = .5; }
     try { const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d'); x.drawImage(src, 0, 0, 8, 8); const d = x.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0; for (let i = 0; i < 256; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; } a.avg = [r / 64 / 255, g / 64 / 255, b / 64 / 255]; } catch (e) { a.avg = [.4, .4, .4]; }
   }
   clearBackdrop() { if (this.ai) this.ai.on = 0; }
@@ -239,7 +240,8 @@ export class Renderer {
     gl.bindVertexArray(this.emptyVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
     // زمین سه‌بعدی از نیمهٔ پایین عکس (پرسپکتیو درست)؛ با راه‌رفتن زیر پای شخصیت حرکت می‌کند
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.clear(gl.DEPTH_BUFFER_BIT);
-    P = this.P.gimg; gl.useProgram(P.p); this._common(P, pal); tex(P); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform2f(P.u.u_ctr, camera.pos[0], camera.pos[2]); gl.uniform1f(P.u.u_d0, 3); gl.uniform1f(P.u.u_wb, this.bg.w);
+    P = this.P.gimg; gl.useProgram(P.p); this._common(P, pal); tex(P); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform2f(P.u.u_ctr, camera.pos[0], camera.pos[2]); const Sx = Math.max((W / H) / (a.asp || 2), (1 - yh) / Math.max(hI, .05)), hw = (W / H) / ((a.asp || 2) * Sx), gc = a.gc || [.3, .3, .3];
+    gl.uniform1f(P.u.u_d0, 3); gl.uniform1f(P.u.u_k, .5 * hw * m[0]); gl.uniform1f(P.u.u_scroll, yaw * .22 - trav * .004 * this.bg.k); gl.uniform2f(P.u.u_fwd, fx, fz); gl.uniform3f(P.u.u_gc, gc[0], gc[1], gc[2]); gl.uniform1f(P.u.u_t, t);
     gl.disable(gl.CULL_FACE); gl.bindVertexArray(this.groundVAO); gl.drawArrays(gl.TRIANGLES, 0, 6);
     // نور شخصیت هماهنگ با رنگ میانگین تصویر
     const av = a.avg || [.4, .4, .4], k = clamp((av[0] + av[1] + av[2]) / 3 * 2, .5, 1.3), pc = { ...pal, amb: av.map((x) => x * .9 + .08), sun: av.map((x) => x * 1.1 * k + .12), glow: av.map((x) => x * .5), lamp: 0, fogD: 0.0005 };
@@ -247,6 +249,7 @@ export class Renderer {
     // سایهٔ نرم زیر پای شخصیت‌ها
     P = this.P.chr; gl.useProgram(P.p); this._common(P, pc); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform1f(P.u.u_flip, 1); gl.uniform1f(P.u.u_emis, 0);
     for (const ch of characters) { const m = chain(trans(ch.x, .015, ch.z), mScale(.5 * ch.scale, .012, .5 * ch.scale)); gl.uniformMatrix4fv(P.u.u_model, false, m); gl.uniform3f(P.u.u_col, av[0] * .12, av[1] * .12, av[2] * .12); gl.bindVertexArray(this.sphereVAO); gl.drawArrays(gl.TRIANGLES, 0, this.sphereN); }
+    if (this.bg.traffic) this._traffic(pc, camera, characters, ref, t);
     this._chars(1, pc, characters);
     if (pal.rain > .05) {
       P = this.P.rain; gl.useProgram(P.p); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform3f(P.u.u_cam, ...camera.pos); gl.uniform1f(P.u.u_time, t); gl.uniform1f(P.u.u_len, .9 + pal.rain * .6);
@@ -255,6 +258,16 @@ export class Renderer {
     P = this.P.post; gl.useProgram(P.p); gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.uniform1f(P.u.u_time, t); gl.uniform1f(P.u.u_grain, this.env.grain ?? .006); gl.uniform1f(P.u.u_vig, .45);
     gl.bindVertexArray(this.emptyVAO); gl.drawArrays(gl.TRIANGLES, 0, 3); gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST);
     this.stats.visibleBoxes = 0; this.stats.draws = 0;
+  }
+  _traffic(pc, camera, characters, ref, t) {            // ماشین + عابر + دوچرخه در حالت فقط‌پس‌زمینه
+    const gl = this.gl, ox = Math.round((ref ? ref.x : camera.target[0]) / 4) * 0, cz = camera.pos[2], cb = [];
+    const near = (x, z) => characters.some((c) => Math.abs(c.x - x) < 2.2 && Math.abs(c.z - z) < 5);
+    for (const c of movingCars(this.seed, t, cz - 55, cz + 55, .7)) if (!near(c.x + ox, c.z)) carBoxes(cb, c.x + ox, c.z, c.head, c.hv);
+    if (cb.length) { let P = this.P.box; gl.useProgram(P.p); this._common(P, pc); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform1f(P.u.u_flip, 1); gl.uniform1f(P.u.u_reveal, 1);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.carBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cb), gl.DYNAMIC_DRAW); gl.bindVertexArray(this.carVAO); gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, cb.length / STRIDE); this.stats.draws++; }
+    const P = this.P.chr; gl.useProgram(P.p); this._common(P, pc); gl.uniformMatrix4fv(P.u.u_vp, false, this.vp); gl.uniform1f(P.u.u_flip, 1);
+    for (const p of extraParts(t, camera.target[0], cz, ox + (ref ? ref.x : 0), characters)) { gl.uniformMatrix4fv(P.u.u_model, false, p.m); gl.uniform3f(P.u.u_col, p.c[0], p.c[1], p.c[2]); gl.uniform1f(P.u.u_emis, p.e || 0);
+      if (p.s) { gl.bindVertexArray(this.sphereVAO); gl.drawArrays(gl.TRIANGLES, 0, this.sphereN); } else { gl.bindVertexArray(this.cubeVAO); gl.drawArrays(gl.TRIANGLES, 0, 36); } }
   }
   screenToGround(nx, ny) { return null; }
 }

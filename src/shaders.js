@@ -131,10 +131,20 @@ void main(){
   o=vec4(grade(c),1.);
 }`;
 export const GIMG_FS = COMMON + BG_COMMON + `
-in vec3 v_wp; uniform float u_d0, u_wb, u_lum; out vec4 o;
+in vec3 v_wp; uniform float u_d0, u_k, u_scroll, u_lum, u_t; uniform vec2 u_fwd; uniform vec3 u_gc; out vec4 o;
+float gh2(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float gvn(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f); return mix(mix(gh2(i),gh2(i+vec2(1,0)),f.x),mix(gh2(i+vec2(0,1)),gh2(i+vec2(1,1)),f.x),f.y); }
 void main(){
-  float L=40., d=u_d0+mir(-v_wp.z,L); float y=u_hI+(1.-u_hI)*u_d0/d; float u=mir(.5+(v_wp.x/u_wb)*(u_d0/d),1.);
-  vec3 c=samp(vec2(u,y))*u_lum, hz=hazeAt()*u_lum; float dc=length(v_wp-u_cam); float f=1.-exp(-pow(dc*.02,1.4));
+  vec2 q=v_wp.xz, rel=q-u_cam.xz; float dd=max(length(rel),.1), fw=max(dot(rel,u_fwd),.1), lat=dot(rel,vec2(-u_fwd.y,u_fwd.x));
+  float n=gvn(q*.7)*.5+gvn(q*3.1)*.3+gvn(q*12.)*.2;
+  vec2 g=abs(fract(q/1.7)-.5); float seam=smoothstep(.47,.5,max(g.x,g.y));
+  vec3 base=u_gc*(.55+.7*n)*(1.-.3*seam)*u_lum;
+  float pud=smoothstep(.45,.62,gvn(q*.28+3.)), rip=.5+.5*sin(gvn(q*9.)*30.+u_t*2.);
+  float ry=clamp(u_hI-(1.-u_hI)*u_d0/max(fw,u_d0)*1.1,0.,1.); float u=mir(.5+(lat/fw)*u_k*2.+u_scroll,1.);
+  vec3 refl=samp(vec2(u,ry))*u_lum*.85;
+  float fr=pow(1.-clamp(abs(u_cam.y-0.)/dd*1.6,0.,1.),2.)*.55+.12;
+  vec3 c=mix(base,refl,clamp(fr*(.2+.8*pud)*(.85+.15*rip),0.,.85));
+  vec3 hz=hazeAt()*u_lum; float f=1.-exp(-pow(dd*.022,1.4));
   c=mix(c,hz,clamp(f,0.,1.)); o=vec4(grade(c),1.);
 }`;
 // کاراکتر تصویری: بیلبورد استوانه‌ای رو به دوربین با آلفا

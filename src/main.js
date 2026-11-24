@@ -53,7 +53,7 @@ export function boot() {
   const saved = store.autoload();
   try { if (saved && saved.characters && saved.characters.length) D.fromJSON(saved); else throw 0; } catch (e) { D.prompt = EXAMPLES[0]; D.applyParsed(parsePrompt(D.prompt)); }
   D.snapshotHomes(); cam.mode = D.cameraMode; applyEnv();
-  renderer.bg.only = !!settings.bgOnly; renderer.bg.h = settings.bgH != null ? +settings.bgH : null; renderer.bg.w = +settings.bgW || 6;
+  renderer.bg.only = !!settings.bgOnly; renderer.bg.h = settings.bgH != null ? +settings.bgH : null; renderer.bg.traffic = settings.bgTraffic !== false;
   if (settings.quality !== 'auto') renderer.setQuality(settings.quality); else renderer.setQuality('medium');
 
   // ---------- واسط کاربری ----------
@@ -179,12 +179,13 @@ export function boot() {
     box.append(h('label', { style: 'display:flex;gap:8px;align-items:center;margin-top:8px' }, chk, 'ساخت خودکار هر ۶۰ متر راه رفتن'));
     // حالت «فقط پس‌زمینهٔ هوش مصنوعی»: شهر/منظرهٔ سه‌بعدی خاموش، تصویر تمام‌صفحه و شخصیت جلوی آن
     const bgc = h('input', { type: 'checkbox' }); bgc.checked = !!settings.bgOnly; bgc.addEventListener('change', () => { settings.bgOnly = renderer.bg.only = bgc.checked; store.saveSettings(settings); if (bgc.checked && !(renderer.ai && renderer.ai.on)) toast('اول یک تصویر بساز یا بارگذاری کن؛ بعد حالت فقط‌پس‌زمینه دیده می‌شود', 4500); });
+    const trc = h('input', { type: 'checkbox' }); trc.checked = settings.bgTraffic !== false; trc.addEventListener('change', () => { settings.bgTraffic = renderer.bg.traffic = trc.checked; store.saveSettings(settings); });
     const up = h('input', { type: 'file', accept: 'image/*', style: 'display:none' }); up.addEventListener('change', async () => { const f = up.files[0]; if (!f) return; try { const bmp = await createImageBitmap(f, { resizeWidth: 2048, resizeQuality: 'medium' }).catch(() => createImageBitmap(f)); renderer.setBackdrop(bmp); toast('تصویر به‌عنوان پس‌زمینه گذاشته شد'); } catch (e) { toast('خواندن تصویر ممکن نشد: ' + e.message, 4000); } up.value = ''; });
     box.append(h('div', { class: 'dlcard', style: 'margin-top:10px' },
       h('label', { style: 'display:flex;gap:8px;align-items:center' }, bgc, 'فقط تصویر هوش مصنوعی (شهر و منظرهٔ سه‌بعدی خاموش)'),
       h('p', { class: 'note' }, 'با روشن‌شدن، فقط تصویر ساخته‌شده پشت شخصیت دیده می‌شود و با راه رفتن آرام حرکت می‌کند. شهر و منظره دست‌نخورده‌اند و با خاموش‌کردن برمی‌گردند.'),
       slider('خط افق در تصویر (۰=بالا)', .25, .8, .01, renderer.bg.h ?? (renderer.ai && renderer.ai.hAuto) ?? .5, (v) => { settings.bgH = renderer.bg.h = v; store.saveSettings(settings); }, (v) => v.toFixed(2)),
-      slider('مقیاس زمین (عرض تصویر روی زمین، متر)', 2, 14, .5, renderer.bg.w, (v) => { settings.bgW = renderer.bg.w = v; store.saveSettings(settings); }, (v) => v.toFixed(1)),
+      h('label', { style: 'display:flex;gap:8px;align-items:center' }, trc, 'ترافیک: ماشین، دوچرخه و عابر پیاده'),
       slider('سرعت حرکت پس‌زمینه', 0, 3, .1, renderer.bg.k, (v) => { renderer.bg.k = v; }, (v) => v.toFixed(1) + '×'),
       h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: () => up.click() }, '🖼 بارگذاری تصویر دلخواه'), up)));
     if (aiThumb) box.append(h('img', { src: aiThumb, style: 'width:100%;max-width:260px;border-radius:10px;margin-top:8px' }), h('button', { class: 'btn sm', onclick: () => aiBlob && store.downloadBlob(aiBlob, 'sudio-ai-backdrop.png') }, '💾 ذخیرهٔ تصویر'));
